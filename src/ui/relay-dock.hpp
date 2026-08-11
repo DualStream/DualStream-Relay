@@ -51,6 +51,10 @@ public:
 	void handleFrontendEvent(enum obs_frontend_event event);
 	void showDockWindow();
 
+	/* A sane opening size for the floating dock; without this it opens
+	 * small enough that compact mode hides everything but the pill. */
+	QSize sizeHint() const override;
+
 public slots:
 	void endStreamHotkey();
 

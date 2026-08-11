@@ -21,7 +21,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #pragma once
 
 #include <QJsonObject>
-#include <QNetworkAccessManager>
 #include <QObject>
 #include <QString>
 #include <QTimer>
@@ -42,6 +41,13 @@ struct DsrApiResult {
 };
 
 /* Token store plus the HTTP layer every other component calls through.
+ *
+ * Transport is libcurl, not Qt Network: OBS ships libcurl (with TLS built
+ * in) on every platform but does not ship Qt's TLS backend plugins, so
+ * QNetworkAccessManager cannot open an https connection inside OBS. Each
+ * request runs on its own short-lived thread and the result is delivered
+ * back on the UI thread.
+ *
  * Sign-in is browser pairing only: the plugin shows a short code, the user
  * approves it at dualstream.gg, and the plugin polls for a token. No
  * password ever passes through this process, and the token lives under the
@@ -67,7 +73,8 @@ public:
 	void signOut();
 
 	/* Refresh ahead of expiry while a stream is running, so the end-stream
-	 * call never lands with a stale token. */
+	 * call never lands with a stale token. A no-op for device tokens, which
+	 * carry no refresh credential. */
 	void ensureFreshToken();
 
 	void get(const QString &path, Handler handler);
@@ -83,7 +90,10 @@ signals:
 private:
 	void request(const QByteArray &verb, const QString &path, const QJsonObject &body, bool hasBody,
 		     Handler handler, bool retried);
+	void finishRequest(int status, bool transportOk, const QByteArray &rawBody, const QByteArray &verb,
+			   const QString &path, const QJsonObject &body, bool hasBody, Handler handler, bool retried);
 	void refreshToken(std::function<void(bool)> done);
+	void finishRefresh(int status, bool transportOk, const QByteArray &rawBody);
 	bool applyTokens(const QJsonObject &data);
 	void loadState();
 	void saveState();
@@ -91,8 +101,6 @@ private:
 	void finishPairing(bool ok, const QString &errorKey);
 	QString apiBase() const;
 	QString statePath() const;
-
-	QNetworkAccessManager network;
 
 	QString accessToken;
 	QString refreshValue;

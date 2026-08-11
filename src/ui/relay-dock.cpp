@@ -1044,6 +1044,11 @@ void RelayDock::showDockWindow()
 	}
 }
 
+QSize RelayDock::sizeHint() const
+{
+	return QSize(320, 480);
+}
+
 void RelayDock::resizeEvent(QResizeEvent *event)
 {
 	QWidget::resizeEvent(event);

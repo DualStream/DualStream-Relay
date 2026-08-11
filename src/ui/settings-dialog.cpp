@@ -77,9 +77,12 @@ SettingsDialog::SettingsDialog(RelayAuth *auth, RelayStatus *status, QWidget *pa
 
 	layout->addWidget(makeHeader("Settings.Account"));
 	QHBoxLayout *accountRow = new QHBoxLayout;
-	QLabel *emailLabel = new QLabel(auth->email().isEmpty() ? dsrText("Settings.SignedIn") : auth->email());
+	QLabel *emailLabel = new QLabel(!auth->signedIn()         ? dsrText("Settings.NotSignedIn")
+					: auth->email().isEmpty() ? dsrText("Settings.SignedIn")
+								  : auth->email());
 	accountRow->addWidget(emailLabel, 1);
 	QPushButton *signOutButton = new QPushButton(dsrText("Settings.SignOut"));
+	signOutButton->setVisible(auth->signedIn());
 	connect(signOutButton, &QPushButton::clicked, this, [this]() {
 		this->auth->signOut();
 		emit signedOut();
