@@ -1,0 +1,16 @@
+name: Check Characters
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+jobs:
+  check-ascii:
+    name: Check for non-ASCII characters
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run character check
+        run: python3 tools/check-ascii.py

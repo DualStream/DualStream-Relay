@@ -1,0 +1,33 @@
+# Exclude everything
+/*
+
+# Except for project files
+!/.github
+!/build-aux
+!/cmake
+!/data
+!/docs
+!/src
+!/tools
+!.clang-format
+!.gersemirc
+!.gitattributes
+!.gitignore
+!buildspec.json
+!CHANGELOG.md
+!CMakeLists.txt
+!CMakePresets.json
+!LICENSE
+!README.md
+
+# Exclude Python bytecode from the tools directory
+__pycache__/
+
+# Exclude lock files
+*.lock.json
+
+# Exclude macOS legacy resource forks
+.DS_Store
+
+# Exclude CMake build number cache
+/cmake/.CMakeBuildNumber
