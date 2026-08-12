@@ -44,8 +44,25 @@ target_sources(
     src/relay-output.c
     src/relay-auth.cpp
     src/relay-destinations.cpp
+    src/relay-pairing.cpp
     src/relay-status.cpp
+    src/vertical-canvas.cpp
+    src/vertical-scenes.cpp
+    src/vertical-output.cpp
+    src/ui/dsr-source-icon.cpp
+    src/ui/dsr-ui-common.cpp
+    src/ui/dsr-widgets.cpp
     src/ui/relay-dock.cpp
+    src/ui/relay-dock-build.cpp
+    src/ui/relay-dock-rows.cpp
+    src/ui/relay-dock-state.cpp
+    src/ui/relay-dock-routing.cpp
+    src/ui/relay-dock-text.cpp
+    src/ui/relay-module.cpp
+    src/ui/vertical-common.cpp
+    src/ui/vertical-preview.cpp
+    src/ui/vertical-dock.cpp
+    src/ui/vertical-sources-dock.cpp
     src/ui/destination-dialog.cpp
     src/ui/settings-dialog.cpp
 )

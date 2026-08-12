@@ -72,6 +72,15 @@ Built on [OBS Studio](https://obsproject.com) and started from the
 Thanks to the OBS Project and its contributors for the platform and the
 tooling that make plugins like this one possible.
 
+## Trademarks
+
+The platform logos under `data/images/platform/` are the trademarks of their
+respective owners and are included solely to identify the destination each
+row sends to, in line with each platform's brand guidelines. They are not
+covered by this project's license, and their inclusion does not imply any
+endorsement, sponsorship or affiliation.
+
 ## License
 
-GPL-2.0-or-later. See [LICENSE](LICENSE).
+GPL-2.0-or-later. See [LICENSE](LICENSE). The exception is the platform
+artwork noted above, which remains the property of its respective owners.

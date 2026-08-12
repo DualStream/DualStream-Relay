@@ -140,17 +140,12 @@ SettingsDialog::SettingsDialog(RelayAuth *auth, RelayStatus *status, QWidget *pa
 	layout->addWidget(makeSeparator());
 
 	QHBoxLayout *linksRow = new QHBoxLayout;
-	QPushButton *consoleLink = new QPushButton(dsrText("Settings.OpenConsole"));
-	consoleLink->setFlat(true);
-	connect(consoleLink, &QPushButton::clicked, this,
-		[this]() { QDesktopServices::openUrl(QUrl(this->auth->webUrl(QStringLiteral("/relay")))); });
-	linksRow->addWidget(consoleLink);
-
-	QPushButton *billingLink = new QPushButton(dsrText("Settings.OpenBilling"));
-	billingLink->setFlat(true);
-	connect(billingLink, &QPushButton::clicked, this,
-		[this]() { QDesktopServices::openUrl(QUrl(this->auth->webUrl(QStringLiteral("/dashboard")))); });
-	linksRow->addWidget(billingLink);
+	QPushButton *accountLink = new QPushButton(dsrText("Settings.OpenAccount"));
+	accountLink->setObjectName(QStringLiteral("secondaryButton"));
+	accountLink->setCursor(Qt::PointingHandCursor);
+	connect(accountLink, &QPushButton::clicked, this,
+		[this]() { QDesktopServices::openUrl(QUrl(this->auth->webUrl(QStringLiteral("/account")))); });
+	linksRow->addWidget(accountLink);
 	linksRow->addStretch();
 	layout->addLayout(linksRow);
 

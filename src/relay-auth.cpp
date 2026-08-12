@@ -20,6 +20,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "relay-auth.hpp"
 
+#include "relay-auth-internal.hpp"
+
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDesktopServices>
@@ -42,35 +44,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 namespace {
 
 const char *kDefaultBase = "https://www.dualstream.gg";
-const int kDefaultPollIntervalMs = 5000;
-const qint64 kDefaultPairingWindowMs = 15 * 60 * 1000;
-
 const long kConnectTimeoutMs = 5000;
 const long kRequestTimeoutMs = 15000;
 
 /* Fall back to the legacy JWT lifetime when the server does not say how
  * long the token lives. Refreshing at half-life keeps a margin either way. */
 const qint64 kFallbackTokenLifeSec = 7 * 24 * 3600;
-
-QString pickString(const QJsonObject &obj, std::initializer_list<const char *> keys)
-{
-	for (const char *key : keys) {
-		const QJsonValue value = obj.value(QLatin1String(key));
-		if (value.isString() && !value.toString().isEmpty())
-			return value.toString();
-	}
-	return QString();
-}
-
-qint64 pickInt(const QJsonObject &obj, std::initializer_list<const char *> keys)
-{
-	for (const char *key : keys) {
-		const QJsonValue value = obj.value(QLatin1String(key));
-		if (value.isDouble())
-			return static_cast<qint64>(value.toDouble());
-	}
-	return 0;
-}
 
 void ensureCurlInit()
 {
@@ -148,6 +127,26 @@ DsrHttpReply runRequest(const QByteArray &verb, const QByteArray &url, const QBy
 }
 
 } // namespace
+
+QString dsrPickString(const QJsonObject &obj, std::initializer_list<const char *> keys)
+{
+	for (const char *key : keys) {
+		const QJsonValue value = obj.value(QLatin1String(key));
+		if (value.isString() && !value.toString().isEmpty())
+			return value.toString();
+	}
+	return QString();
+}
+
+qint64 dsrPickInt(const QJsonObject &obj, std::initializer_list<const char *> keys)
+{
+	for (const char *key : keys) {
+		const QJsonValue value = obj.value(QLatin1String(key));
+		if (value.isDouble())
+			return static_cast<qint64>(value.toDouble());
+	}
+	return 0;
+}
 
 RelayAuth::RelayAuth(QObject *parent) : QObject(parent)
 {
@@ -301,19 +300,20 @@ void RelayAuth::del(const QString &path, Handler handler)
 bool RelayAuth::applyTokens(const QJsonObject &data)
 {
 	const QString token =
-		pickString(data, {"token", "access_token", "supabase_access_token", "supabaseAccessToken"});
+		dsrPickString(data, {"token", "access_token", "supabase_access_token", "supabaseAccessToken"});
 	if (token.isEmpty())
 		return false;
 
 	accessToken = token;
-	const QString refresh = pickString(data, {"refresh_token", "supabase_refresh_token", "supabaseRefreshToken"});
+	const QString refresh =
+		dsrPickString(data, {"refresh_token", "supabase_refresh_token", "supabaseRefreshToken"});
 	if (!refresh.isEmpty())
 		refreshValue = refresh;
-	const QString mail = pickString(data, {"email"});
+	const QString mail = dsrPickString(data, {"email"});
 	if (!mail.isEmpty())
 		accountEmail = mail;
 	issuedAt = QDateTime::currentSecsSinceEpoch();
-	expiresIn = pickInt(data, {"expires_in", "expiresIn"});
+	expiresIn = dsrPickInt(data, {"expires_in", "expiresIn"});
 	saveState();
 	return true;
 }
@@ -391,111 +391,6 @@ void RelayAuth::ensureFreshToken()
 	const qint64 age = QDateTime::currentSecsSinceEpoch() - issuedAt;
 	if (age > life / 2)
 		refreshToken(nullptr);
-}
-
-void RelayAuth::startPairing()
-{
-	if (pairing())
-		return;
-
-	QJsonObject body;
-	body.insert(QStringLiteral("client"), QStringLiteral("obs-dualstream-relay"));
-	body.insert(QStringLiteral("client_version"), QLatin1String(PLUGIN_VERSION));
-
-	post(QStringLiteral("/api/auth/device/start"), body, [this](const DsrApiResult &result) {
-		if (!result.ok()) {
-			finishPairing(false, result.transportOk ? QStringLiteral("Error.PairingUnavailable")
-								: QStringLiteral("Error.Network"));
-			return;
-		}
-
-		deviceCode = pickString(result.body, {"device_code", "deviceCode"});
-		userCode = pickString(result.body, {"user_code", "userCode"});
-		verifyUrl = pickString(result.body, {"verification_url", "verificationUrl", "verification_uri"});
-		if (deviceCode.isEmpty() || userCode.isEmpty()) {
-			finishPairing(false, QStringLiteral("Error.PairingUnavailable"));
-			return;
-		}
-		if (verifyUrl.isEmpty())
-			verifyUrl = webUrl(QStringLiteral("/link?code=%1").arg(userCode));
-
-		const qint64 interval = pickInt(result.body, {"interval"});
-		pollTimer.setInterval(interval > 0 ? int(interval * 1000) : kDefaultPollIntervalMs);
-		const qint64 expires = pickInt(result.body, {"expires_in", "expiresIn"});
-		pairingDeadlineMs =
-			QDateTime::currentMSecsSinceEpoch() + (expires > 0 ? expires * 1000 : kDefaultPairingWindowMs);
-
-		pollTimer.start();
-		QDesktopServices::openUrl(QUrl(verifyUrl));
-		emit pairingChanged();
-	});
-}
-
-void RelayAuth::pollPairing()
-{
-	if (deviceCode.isEmpty() || pollInFlight)
-		return;
-
-	if (QDateTime::currentMSecsSinceEpoch() > pairingDeadlineMs) {
-		finishPairing(false, QStringLiteral("Error.PairingExpired"));
-		return;
-	}
-
-	pollInFlight = true;
-	QJsonObject body;
-	body.insert(QStringLiteral("device_code"), deviceCode);
-
-	post(QStringLiteral("/api/auth/device/poll"), body, [this](const DsrApiResult &result) {
-		pollInFlight = false;
-		if (deviceCode.isEmpty())
-			return; /* canceled while the poll was in flight */
-
-		if (result.ok()) {
-			QJsonObject data = result.body.value(QStringLiteral("data")).toObject();
-			if (applyTokens(data.isEmpty() ? result.body : data)) {
-				finishPairing(true, QString());
-				emit stateChanged();
-			}
-			return;
-		}
-
-		const QString code = result.code();
-		if (code == QLatin1String("authorization_pending") || code == QLatin1String("pending") ||
-		    result.status == 428 || result.status == 202)
-			return; /* keep polling */
-		if (code == QLatin1String("slow_down")) {
-			pollTimer.setInterval(pollTimer.interval() + 5000);
-			return;
-		}
-		if (!result.transportOk)
-			return; /* transient network trouble; keep polling */
-
-		finishPairing(false, result.status == 410 ? QStringLiteral("Error.PairingExpired")
-							  : QStringLiteral("Error.PairingDenied"));
-	});
-}
-
-void RelayAuth::finishPairing(bool ok, const QString &errorKey)
-{
-	pollTimer.stop();
-	deviceCode.clear();
-	userCode.clear();
-	verifyUrl.clear();
-	pollInFlight = false;
-	emit pairingChanged();
-	emit pairingFinished(ok, errorKey);
-}
-
-void RelayAuth::cancelPairing()
-{
-	if (!pairing())
-		return;
-	pollTimer.stop();
-	deviceCode.clear();
-	userCode.clear();
-	verifyUrl.clear();
-	pollInFlight = false;
-	emit pairingChanged();
 }
 
 void RelayAuth::signOut()

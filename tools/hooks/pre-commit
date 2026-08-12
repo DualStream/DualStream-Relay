@@ -1,11 +1,16 @@
 #!/bin/sh
 # Install with: cp tools/hooks/pre-commit .git/hooks/pre-commit
-# Runs the character checks against the staged files.
+# Runs the repo checks against the staged files.
 
 files=$(git diff --cached --name-only --diff-filter=ACM)
 [ -z "$files" ] && exit 0
 
 echo "$files" | xargs python3 tools/check-ascii.py || {
     echo "pre-commit: fix the characters above, then commit again" >&2
+    exit 1
+}
+
+echo "$files" | xargs python3 tools/check-file-length.py || {
+    echo "pre-commit: split the files above, then commit again" >&2
     exit 1
 }

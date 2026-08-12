@@ -21,20 +21,22 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #pragma once
 
 #include <QDateTime>
+#include <QStringList>
 #include <QWidget>
 
 #include <obs-frontend-api.h>
 
 #include "../relay-auth.hpp"
+#include "../relay-output.h"
 #include "../relay-destinations.hpp"
 #include "../relay-status.hpp"
+#include "dsr-widgets.hpp"
 
 class QLabel;
 class QPushButton;
 class QScrollArea;
 class QStackedWidget;
 class QTimer;
-class QToolButton;
 class QVBoxLayout;
 
 /* The relay dock. One rule shapes everything in here: there is exactly one
@@ -60,6 +62,7 @@ public slots:
 
 protected:
 	void resizeEvent(QResizeEvent *event) override;
+	bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
 	enum class State {
@@ -83,15 +86,22 @@ private:
 	void refreshAll();
 	void fetchIngestTarget(std::function<void(bool ok)> done);
 	void routeToRelay();
+	void offerEncoderTune();
+	QStringList encoderTuneChanges(const dsr_encoder_settings &current) const;
 	void restoreRoute();
 	void openSettings();
 	void openAddDialog();
 	void firstRunShow();
 	bool keyMismatch() const;
+	void repairEmptyKey();
+	void endEverything();
+	QString environmentSignature() const;
+	QString blockingSetupIssue() const;
+	void openEditDialog(const QString &destinationId);
 	QWidget *makeRow(const DsrDestination &dest, const DsrDestStatus *live);
 	QString elapsedText() const;
 	QString protectedBannerText() const;
-	QString preflightText() const;
+	QString outputMismatch() const;
 	QString summaryText(State state) const;
 	void setPill(State state);
 	void setBanner(const QString &text, const char *kind, const QString &actionText, std::function<void()> action);
@@ -103,7 +113,7 @@ private:
 	/* header */
 	QLabel *statusPill;
 	QLabel *timerLabel;
-	QToolButton *gearButton;
+	DsrIconButton *gearButton;
 
 	/* banner */
 	QLabel *banner;
@@ -119,7 +129,6 @@ private:
 	QLabel *urlLabel;
 	QPushButton *primaryButton;
 	QWidget *listPage;
-	QLabel *preflightLabel;
 	QScrollArea *scroll;
 	QWidget *listContainer;
 	QVBoxLayout *listLayout;
@@ -127,7 +136,7 @@ private:
 
 	/* footer */
 	QWidget *footer;
-	QPushButton *addButton;
+	DsrIconButton *addButton;
 	QLabel *statsLabel;
 	QLabel *countLabel;
 	QPushButton *endButton;
@@ -140,6 +149,7 @@ private:
 	bool lapsed = false;
 	bool destOffline = false;
 	QString pairingError;
+	QString lastEnvironment;
 	qint64 localStreamStartMs = 0;
 	QDateTime protectedLocalSince;
 

@@ -75,9 +75,13 @@ signals:
 
 private:
 	void handleFrame(const DsrApiResult &result);
+	void updateTimer();
+	void abandonEnd();
 
 	RelayAuth *auth;
 	QTimer timer;
+	bool liveWanted = false;
+	qint64 endDeadlineMs = 0;
 	bool available = true;
 	bool reachableFlag = true;
 	int failStreak = 0;
