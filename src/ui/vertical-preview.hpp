@@ -24,6 +24,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPointF>
 #include <QWidget>
 
+#include <graphics/matrix4.h>
+#include <graphics/vec4.h>
 #include <graphics/vec2.h>
 #include <obs.h>
 
@@ -54,15 +56,34 @@ protected:
 	void mouseMoveEvent(QMouseEvent *event) override;
 	void mouseReleaseEvent(QMouseEvent *event) override;
 	void wheelEvent(QWheelEvent *event) override;
+	void leaveEvent(QEvent *event) override;
 
 private:
 	void ensureDisplay();
 	bool mapToCanvas(const QPointF &widgetPos, QPointF *canvasPos) const;
 	void setSelectedItem(obs_sceneitem_t *item);
 	void applySelection(qint64 itemId);
-	bool beginCornerResize(const QPointF &canvasPos);
+	/* Implemented in vertical-preview-edit.cpp. */
+	uint32_t handleAt(obs_sceneitem_t *item, const QPointF &canvasPos) const;
+	void beginStretch(obs_sceneitem_t *item, uint32_t handle);
+	void stretchItem(obs_sceneitem_t *item, const QPointF &canvasPos);
+	void cropItem(obs_sceneitem_t *item, const QPointF &canvasPos);
+	void updateCursor(const QPointF &canvasPos);
 
 	static void drawCallback(void *param, uint32_t cx, uint32_t cy);
+
+	/* Implemented in vertical-preview-draw.cpp. */
+	void drawOverflow(obs_sceneitem_t *item);
+	void drawSelection(obs_sceneitem_t *item, bool selected, float pixelRatio);
+	void drawCropSide(bool cropped, float x1, float y1, float x2, float y2, float thickness, struct vec2 boxScale,
+			  const struct vec4 &colour);
+	void drawSpacingHelpers(obs_sceneitem_t *item, float viewWidth, float viewHeight, float pixelRatio);
+	void releaseSpacingLabels();
+
+	/* The item under the cursor, tracked so an unselected source can be
+	 * outlined on hover the way OBS's preview does. Referenced. */
+	void setHoveredItem(obs_sceneitem_t *item);
+	obs_sceneitem_t *itemAt(const QPointF &canvasPos) const;
 
 	VerticalCanvas *manager;
 	obs_display_t *display = nullptr;
@@ -72,17 +93,32 @@ private:
 	mutable QMutex mutex;
 	obs_canvas_t *canvas = nullptr;
 	obs_sceneitem_t *selected = nullptr;
-	gs_vertbuffer_t *outline = nullptr;
-	/* Unit quad, drawn as the black canvas fill and as the corner handles. */
+	obs_sceneitem_t *hovered = nullptr;
+	/* Unit quad, drawn as the black canvas fill and as the resize handles. */
 	gs_vertbuffer_t *quad = nullptr;
+	/* OBS's own diagonal hatch, carried in this plugin's data directory. */
+	gs_texture_t *overflowTexture = nullptr;
+	gs_effect_t *overflowEffect = nullptr;
+	gs_effect_t *stripedEffect = nullptr;
+	/* Device pixel ratio, cached because the draw callback runs on the
+	 * graphics thread and must not call into Qt. */
+	float uiScale = 1.0f;
+
+	/* One text source per canvas edge, created on first use. Private
+	 * sources, so they never appear in the user's source list. */
+	obs_source_t *spacingLabel[4] = {nullptr, nullptr, nullptr, nullptr};
+	int spacingPx[4] = {-1, -1, -1, -1};
 
 	bool dragging = false;
 	QPointF dragStartCanvas;
 	struct vec2 dragStartPos;
 
-	bool resizing = false;
-	QPointF resizeAnchor;
-	double resizeStartDist = 0;
-	struct vec2 resizeStartPos;
-	struct vec2 resizeStartScale;
+	/* Non-zero while a handle is being dragged; alt at press turns the same
+	 * drag into a crop. */
+	uint32_t stretchHandle = 0;
+	bool cropping = false;
+	struct vec2 stretchSize;
+	struct obs_sceneitem_crop startCrop;
+	struct matrix4 itemToScreen;
+	struct matrix4 screenToItem;
 };

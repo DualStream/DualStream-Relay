@@ -1,0 +1,53 @@
+/*
+ * Overflow hatch for the vertical preview.
+ *
+ * OBS draws its hatch with the stock repeat effect, which returns the texture
+ * unchanged. That texture is white and black stripes at 13 percent alpha, so
+ * it is a wash whose appearance comes entirely from what lies under it, and it
+ * only reads as a hatch because OBS's preview background is grey. This dock's
+ * surround is close to black, where the same wash is invisible.
+ *
+ * This keeps OBS's texture as the source of the pattern but uses its luminance
+ * as coverage rather than colour: the light stripes are drawn in `color` and
+ * the dark ones are left fully transparent, so the surround shows through the
+ * gaps the way it does in OBS.
+ */
+
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform float2 scale;
+uniform float4 color;
+
+sampler_state def_sampler {
+	Filter   = Linear;
+	AddressU = Repeat;
+	AddressV = Repeat;
+};
+
+struct VertInOut {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertInOut VSDefault(VertInOut vert_in)
+{
+	VertInOut vert_out;
+	vert_out.pos = mul(float4(vert_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = vert_in.uv * scale;
+	return vert_out;
+}
+
+float4 PSDrawHatch(VertInOut vert_in) : TARGET
+{
+	float4 texel = image.Sample(def_sampler, vert_in.uv);
+	return float4(color.rgb, color.a * texel.r);
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = VSDefault(vert_in);
+		pixel_shader  = PSDrawHatch(vert_in);
+	}
+}

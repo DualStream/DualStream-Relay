@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #pragma once
 
+#include <QColor>
 #include <QString>
 #include <QVector>
 
@@ -31,6 +32,14 @@ class VerticalCanvas;
 
 /* Shared by the preview and both vertical docks. */
 
+/* Which side of an item a drag is acting on. Same bit layout OBS uses for its
+ * own handles, and the same values as OBS_ALIGN_*, which is what lets the crop
+ * code compare a handle against an item's alignment directly. */
+#define DSR_ITEM_LEFT (1 << 0)
+#define DSR_ITEM_RIGHT (1 << 1)
+#define DSR_ITEM_TOP (1 << 2)
+#define DSR_ITEM_BOTTOM (1 << 3)
+
 /* Settings key recording that the user turned the canvas off on purpose. */
 extern const char *kVerticalOffFlag;
 
@@ -38,6 +47,14 @@ extern const char *kVerticalOffFlag;
  * itself is filled black by the preview so the canvas edges read clearly
  * against it. */
 uint32_t dsrPreviewSurroundColor();
+
+/* The colour OBS paints behind its own preview. The overflow hatch is a 13
+ * percent translucent wash, so its appearance is entirely decided by what sits
+ * under it; reproducing OBS's look means reproducing that backdrop. Themes
+ * assign it to a Qt property on OBSQTDisplay, a class a plugin cannot
+ * subclass, so it is read off the live main-window preview and falls back to
+ * the frontend's own default. */
+QColor dsrObsPreviewBackground();
 
 /* Item of the current portrait scene by id, referenced; caller releases.
  * NULL when the scene or the item is gone. */

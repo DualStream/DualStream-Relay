@@ -20,6 +20,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "vertical-common.hpp"
 
+#include <QMainWindow>
+#include <QWidget>
+
+#include <obs-frontend-api.h>
+
 #include "../vertical-canvas.hpp"
 #include "dsr-ui-common.hpp"
 
@@ -50,6 +55,22 @@ bool findByIdCb(obs_scene_t *, obs_sceneitem_t *item, void *param)
 uint32_t dsrPreviewSurroundColor()
 {
 	return 0xFF1A1413;
+}
+
+QColor dsrObsPreviewBackground()
+{
+	QMainWindow *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	if (main) {
+		for (QWidget *child : main->findChildren<QWidget *>()) {
+			if (qstrcmp(child->metaObject()->className(), "OBSQTDisplay") != 0)
+				continue;
+			const QColor colour = child->property("displayBackgroundColor").value<QColor>();
+			if (colour.isValid())
+				return colour;
+		}
+	}
+	/* GREY_COLOR_BACKGROUND, the value every theme starts from. */
+	return QColor::fromRgb(0x4C, 0x4C, 0x4C);
 }
 
 obs_sceneitem_t *dsrFindCounterpartItem(VerticalCanvas *manager, int64_t itemId)

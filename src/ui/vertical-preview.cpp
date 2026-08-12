@@ -40,8 +40,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 namespace {
 
 const float kMinBoundsPx = 40.0f;
-const float kHandlePx = 14.0f;
-const double kGrabTolerancePx = 12.0;
+/* HANDLE_SEL_RADIUS in OBSBasicPreview: the handles are drawn at radius 4 and
+ * grabbed within 1.5 times that, so a near miss still takes. */
+const double kGrabTolerancePx = 6.0;
 
 } // namespace
 
@@ -54,11 +55,17 @@ VerticalPreview::VerticalPreview(VerticalCanvas *manager, QWidget *parent) : QWi
 	setAttribute(Qt::WA_DontCreateNativeAncestors);
 	setMinimumHeight(280);
 	setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+	/* Hover needs move events with no button held. */
+	setMouseTracking(true);
 
 	connect(manager, &VerticalCanvas::selectionChanged, this, &VerticalPreview::applySelection);
 	/* Membership changes can remove the selected item; re-resolving by id
 	 * drops the stale reference rather than outlining a ghost. */
-	connect(manager, &VerticalCanvas::changed, this, [this]() { applySelection(this->manager->selectedItemId()); });
+	connect(manager, &VerticalCanvas::changed, this, [this]() {
+		applySelection(this->manager->selectedItemId());
+		/* The hovered item may have just been removed. */
+		setHoveredItem(nullptr);
+	});
 }
 
 VerticalPreview::~VerticalPreview()
@@ -70,20 +77,31 @@ VerticalPreview::~VerticalPreview()
 	}
 
 	QMutexLocker lock(&mutex);
-	if (outline || quad) {
+	if (quad || overflowTexture || overflowEffect || stripedEffect) {
 		obs_enter_graphics();
-		if (outline)
-			gs_vertexbuffer_destroy(outline);
 		if (quad)
 			gs_vertexbuffer_destroy(quad);
+		if (overflowTexture)
+			gs_texture_destroy(overflowTexture);
+		if (overflowEffect)
+			gs_effect_destroy(overflowEffect);
+		if (stripedEffect)
+			gs_effect_destroy(stripedEffect);
 		obs_leave_graphics();
-		outline = nullptr;
 		quad = nullptr;
+		overflowTexture = nullptr;
+		overflowEffect = nullptr;
+		stripedEffect = nullptr;
 	}
 	if (selected) {
 		obs_sceneitem_release(selected);
 		selected = nullptr;
 	}
+	if (hovered) {
+		obs_sceneitem_release(hovered);
+		hovered = nullptr;
+	}
+	releaseSpacingLabels();
 	if (canvas) {
 		obs_canvas_release(canvas);
 		canvas = nullptr;
@@ -137,10 +155,13 @@ void VerticalPreview::showEvent(QShowEvent *event)
 void VerticalPreview::resizeEvent(QResizeEvent *event)
 {
 	QWidget::resizeEvent(event);
-	if (display) {
-		const qreal ratio = devicePixelRatioF();
-		obs_display_resize(display, (uint32_t)(width() * ratio), (uint32_t)(height() * ratio));
+	const qreal ratio = devicePixelRatioF();
+	{
+		QMutexLocker lock(&mutex);
+		uiScale = (float)ratio;
 	}
+	if (display)
+		obs_display_resize(display, (uint32_t)(width() * ratio), (uint32_t)(height() * ratio));
 }
 
 void VerticalPreview::ensureDisplay()
@@ -149,6 +170,11 @@ void VerticalPreview::ensureDisplay()
 		return;
 
 	const qreal ratio = devicePixelRatioF();
+	{
+		QMutexLocker lock(&mutex);
+		uiScale = (float)ratio;
+	}
+
 	struct gs_init_data init = {};
 	init.cx = (uint32_t)(width() * ratio);
 	init.cy = (uint32_t)(height() * ratio);
@@ -176,17 +202,18 @@ void VerticalPreview::drawCallback(void *param, uint32_t cx, uint32_t cy)
 		return;
 
 	const float scale = qMin((float)cx / kPortraitWidth, (float)cy / kPortraitHeight);
-	const int viewWidth = (int)(kPortraitWidth * scale);
-	const int viewHeight = (int)(kPortraitHeight * scale);
+	const float viewX = ((float)cx - kPortraitWidth * scale) / 2.0f;
+	const float viewY = ((float)cy - kPortraitHeight * scale) / 2.0f;
 
+	/* One projection covering the whole widget, not just the frame, with a
+	 * matrix that maps canvas units into it. OBS does the same for its
+	 * editing pass: a viewport clipped to the canvas would cut off exactly
+	 * the overhang the hatch and the selection box exist to show. */
 	gs_viewport_push();
 	gs_projection_push();
-	gs_ortho(0.0f, (float)kPortraitWidth, 0.0f, (float)kPortraitHeight, -100.0f, 100.0f);
-	gs_set_viewport(((int)cx - viewWidth) / 2, ((int)cy - viewHeight) / 2, viewWidth, viewHeight);
+	gs_ortho(0.0f, (float)cx, 0.0f, (float)cy, -100.0f, 100.0f);
+	gs_set_viewport(0, 0, (int)cx, (int)cy);
 
-	/* The canvas itself is black, distinct from the dock behind it, so the
-	 * 9:16 frame reads as the edge of the picture. Sources composite over
-	 * this rather than over the surround. */
 	if (!self->quad) {
 		gs_render_start(true);
 		gs_vertex2f(0.0f, 0.0f);
@@ -196,13 +223,24 @@ void VerticalPreview::drawCallback(void *param, uint32_t cx, uint32_t cy)
 		self->quad = gs_render_save();
 	}
 
+	const bool editable = self->selected && obs_sceneitem_visible(self->selected) &&
+			      !obs_sceneitem_locked(self->selected);
+
+	gs_matrix_push();
+	gs_matrix_translate3f(viewX, viewY, 0.0f);
+	gs_matrix_scale3f(scale, scale, 1.0f);
+
+	/* Hatch first, over the item's whole box. The canvas fill then paints
+	 * over everything inside the frame, leaving only the overhang. */
+	if (editable)
+		self->drawOverflow(self->selected);
+
 	gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
-	gs_eparam_t *colorParam = gs_effect_get_param_by_name(solid, "color");
 	gs_technique_t *solidTech = gs_effect_get_technique(solid, "Solid");
 	struct vec4 fill;
-
 	vec4_set(&fill, 0.0f, 0.0f, 0.0f, 1.0f);
-	gs_effect_set_vec4(colorParam, &fill);
+	gs_effect_set_vec4(gs_effect_get_param_by_name(solid, "color"), &fill);
+
 	gs_technique_begin(solidTech);
 	gs_technique_begin_pass(solidTech, 0);
 	gs_matrix_push();
@@ -215,54 +253,21 @@ void VerticalPreview::drawCallback(void *param, uint32_t cx, uint32_t cy)
 
 	obs_render_canvas_texture(self->canvas);
 
-	if (self->selected && obs_sceneitem_visible(self->selected)) {
-		/* Built once, in the graphics context the callback already
-		 * holds, so the callback never allocates after that. */
-		if (!self->outline) {
-			gs_render_start(true);
-			gs_vertex2f(0.0f, 0.0f);
-			gs_vertex2f(1.0f, 0.0f);
-			gs_vertex2f(1.0f, 1.0f);
-			gs_vertex2f(0.0f, 1.0f);
-			gs_vertex2f(0.0f, 0.0f);
-			self->outline = gs_render_save();
-		}
-		struct matrix4 box;
-		obs_sceneitem_get_box_transform(self->selected, &box);
-
-		struct vec4 accent;
-		vec4_set(&accent, 0.953f, 0.286f, 0.055f, 1.0f);
-		gs_effect_set_vec4(colorParam, &accent);
-
-		gs_technique_begin(solidTech);
-		gs_technique_begin_pass(solidTech, 0);
-
-		gs_matrix_push();
-		gs_matrix_mul(&box);
-		gs_load_vertexbuffer(self->outline);
-		gs_draw(GS_LINESTRIP, 0, 0);
-		gs_matrix_pop();
-
-		/* Handles are sized in display pixels so they stay grabbable at
-		 * any zoom. */
-		const float handleSize = kHandlePx * ((float)kPortraitWidth / (float)viewWidth);
-		const float unit[4][2] = {{0.0f, 0.0f}, {1.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 1.0f}};
-		for (const float *corner : unit) {
-			struct vec3 point;
-			vec3_set(&point, corner[0], corner[1], 0.0f);
-			vec3_transform(&point, &point, &box);
-
-			gs_matrix_push();
-			gs_matrix_translate3f(point.x - handleSize / 2.0f, point.y - handleSize / 2.0f, 0.0f);
-			gs_matrix_scale3f(handleSize, handleSize, 1.0f);
-			gs_load_vertexbuffer(self->quad);
-			gs_draw(GS_TRISTRIP, 0, 0);
-			gs_matrix_pop();
-		}
-
-		gs_technique_end_pass(solidTech);
-		gs_technique_end(solidTech);
+	/* Handles are sized in display pixels, so the item scale is left
+	 * behind and only the device ratio carries in. */
+	if (editable) {
+		self->drawSelection(self->selected, true, self->uiScale);
+		self->drawSpacingHelpers(self->selected, kPortraitWidth * scale, kPortraitHeight * scale,
+					 self->uiScale);
 	}
+
+	/* An unselected source under the cursor gets its box only, in the
+	 * hover colour, matching what OBS's preview does. */
+	if (self->hovered && self->hovered != self->selected && obs_sceneitem_visible(self->hovered) &&
+	    !obs_sceneitem_locked(self->hovered))
+		self->drawSelection(self->hovered, false, self->uiScale);
+
+	gs_matrix_pop();
 
 	gs_projection_pop();
 	gs_viewport_pop();
@@ -282,46 +287,6 @@ bool VerticalPreview::mapToCanvas(const QPointF &widgetPos, QPointF *canvasPos) 
 	return true;
 }
 
-/* A press near a corner of the selected item starts a resize instead of a
- * reselect, anchored on the opposite corner. */
-bool VerticalPreview::beginCornerResize(const QPointF &canvasPos)
-{
-	QMutexLocker lock(&mutex);
-	if (!selected || !obs_sceneitem_visible(selected) || obs_sceneitem_locked(selected))
-		return false;
-
-	const float widgetScale = qMin((float)width() / kPortraitWidth, (float)height() / kPortraitHeight);
-	if (widgetScale <= 0.0f)
-		return false;
-	const double tolerance = kGrabTolerancePx / widgetScale;
-
-	struct matrix4 box;
-	obs_sceneitem_get_box_transform(selected, &box);
-
-	const float unit[4][2] = {{0.0f, 0.0f}, {1.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 1.0f}};
-	for (int i = 0; i < 4; i++) {
-		struct vec3 corner;
-		vec3_set(&corner, unit[i][0], unit[i][1], 0.0f);
-		vec3_transform(&corner, &corner, &box);
-		if (std::hypot(canvasPos.x() - corner.x, canvasPos.y() - corner.y) > tolerance)
-			continue;
-
-		struct vec3 anchor;
-		vec3_set(&anchor, unit[3 - i][0], unit[3 - i][1], 0.0f);
-		vec3_transform(&anchor, &anchor, &box);
-
-		resizeAnchor = QPointF(anchor.x, anchor.y);
-		resizeStartDist = std::hypot(canvasPos.x() - resizeAnchor.x(), canvasPos.y() - resizeAnchor.y());
-		if (resizeStartDist < 1.0)
-			return false;
-		obs_sceneitem_get_pos(selected, &resizeStartPos);
-		obs_sceneitem_get_scale(selected, &resizeStartScale);
-		resizing = true;
-		return true;
-	}
-	return false;
-}
-
 void VerticalPreview::mousePressEvent(QMouseEvent *event)
 {
 	if (event->button() != Qt::LeftButton)
@@ -331,24 +296,51 @@ void VerticalPreview::mousePressEvent(QMouseEvent *event)
 	if (!mapToCanvas(event->position(), &canvasPos))
 		return;
 
-	if (beginCornerResize(canvasPos))
-		return;
+	/* A press on a handle of the already selected item stretches it, or
+	 * crops it when alt is held, before any reselect can happen. */
+	{
+		QMutexLocker lock(&mutex);
+		if (selected && obs_sceneitem_visible(selected) && !obs_sceneitem_locked(selected)) {
+			const uint32_t handle = handleAt(selected, canvasPos);
+			if (handle) {
+				cropping = event->modifiers() & Qt::AltModifier;
+				beginStretch(selected, handle);
+				return;
+			}
+		}
+	}
 
+	obs_sceneitem_t *hit = itemAt(canvasPos);
+
+	/* applySelection takes its own reference, so this one is released
+	 * after the position is read from it. */
+	manager->setSelectedItemId(hit ? obs_sceneitem_get_id(hit) : -1);
+
+	if (hit) {
+		dragging = true;
+		dragStartCanvas = canvasPos;
+		obs_sceneitem_get_pos(hit, &dragStartPos);
+		obs_sceneitem_release(hit);
+	}
+}
+
+/* Topmost visible unlocked item under a canvas point, referenced; the caller
+ * releases it. Enumeration runs bottom to top, so the last hit wins. The box
+ * transform maps the unit square onto the item, so a point is inside when its
+ * inverse lands in [0, 1]. */
+obs_sceneitem_t *VerticalPreview::itemAt(const QPointF &canvasPos) const
+{
 	obs_source_t *sceneSource = manager->currentCounterpart();
 	if (!sceneSource)
-		return;
+		return nullptr;
 
 	QVector<obs_sceneitem_t *> items;
 	obs_scene_enum_items(obs_scene_from_source(sceneSource), dsrCollectSceneItems, &items);
 	obs_source_release(sceneSource);
 
-	/* Topmost hit wins: enumeration runs bottom to top, so walk backwards.
-	 * The transform maps the unit square onto the item's box, so a point is
-	 * inside when its inverse lands in [0, 1]. */
 	obs_sceneitem_t *hit = nullptr;
-	for (int i = items.size() - 1; i >= 0; i--) {
-		obs_sceneitem_t *item = items[i];
-		if (hit || !obs_sceneitem_visible(item) || obs_sceneitem_locked(item))
+	for (obs_sceneitem_t *item : items) {
+		if (!obs_sceneitem_visible(item) || obs_sceneitem_locked(item))
 			continue;
 
 		struct matrix4 box;
@@ -364,44 +356,49 @@ void VerticalPreview::mousePressEvent(QMouseEvent *event)
 			hit = item;
 	}
 
-	/* applySelection takes its own reference, so every enumerated
-	 * reference is released below. */
-	manager->setSelectedItemId(hit ? obs_sceneitem_get_id(hit) : -1);
-
-	if (hit) {
-		dragging = true;
-		dragStartCanvas = canvasPos;
-		obs_sceneitem_get_pos(hit, &dragStartPos);
-	}
-
+	if (hit)
+		obs_sceneitem_addref(hit);
 	for (obs_sceneitem_t *item : items)
 		obs_sceneitem_release(item);
+	return hit;
+}
+
+void VerticalPreview::setHoveredItem(obs_sceneitem_t *item)
+{
+	QMutexLocker lock(&mutex);
+	if (hovered)
+		obs_sceneitem_release(hovered);
+	hovered = item;
+}
+
+void VerticalPreview::leaveEvent(QEvent *event)
+{
+	QWidget::leaveEvent(event);
+	setHoveredItem(nullptr);
+	unsetCursor();
 }
 
 void VerticalPreview::mouseMoveEvent(QMouseEvent *event)
 {
-	if (!dragging && !resizing)
-		return;
-
 	QPointF canvasPos;
 	if (!mapToCanvas(event->position(), &canvasPos))
 		return;
+
+	if (!dragging && !stretchHandle) {
+		setHoveredItem(itemAt(canvasPos));
+		updateCursor(canvasPos);
+		return;
+	}
 
 	QMutexLocker lock(&mutex);
 	if (!selected || obs_sceneitem_locked(selected))
 		return;
 
-	if (resizing) {
-		const double dist = std::hypot(canvasPos.x() - resizeAnchor.x(), canvasPos.y() - resizeAnchor.y());
-		const float factor = (float)qBound(0.05, dist / resizeStartDist, 50.0);
-
-		struct vec2 scale;
-		struct vec2 pos;
-		vec2_set(&scale, resizeStartScale.x * factor, resizeStartScale.y * factor);
-		vec2_set(&pos, (float)resizeAnchor.x() + (resizeStartPos.x - (float)resizeAnchor.x()) * factor,
-			 (float)resizeAnchor.y() + (resizeStartPos.y - (float)resizeAnchor.y()) * factor);
-		obs_sceneitem_set_scale(selected, &scale);
-		obs_sceneitem_set_pos(selected, &pos);
+	if (stretchHandle) {
+		if (cropping)
+			cropItem(selected, canvasPos);
+		else
+			stretchItem(selected, canvasPos);
 		return;
 	}
 
@@ -411,11 +408,39 @@ void VerticalPreview::mouseMoveEvent(QMouseEvent *event)
 	obs_sceneitem_set_pos(selected, &pos);
 }
 
+/* Resize cursor over a handle, using the same flag-to-shape mapping OBS uses.
+ * The rotation and negative-scale branches it carries are left out: this dock
+ * cannot rotate or flip an item. */
+void VerticalPreview::updateCursor(const QPointF &canvasPos)
+{
+	uint32_t flags = 0;
+	{
+		QMutexLocker lock(&mutex);
+		if (selected && obs_sceneitem_visible(selected) && !obs_sceneitem_locked(selected))
+			flags = handleAt(selected, canvasPos);
+	}
+
+	if (!flags) {
+		unsetCursor();
+		return;
+	}
+
+	if ((flags & DSR_ITEM_LEFT && flags & DSR_ITEM_TOP) || (flags & DSR_ITEM_RIGHT && flags & DSR_ITEM_BOTTOM))
+		setCursor(Qt::SizeFDiagCursor);
+	else if ((flags & DSR_ITEM_LEFT && flags & DSR_ITEM_BOTTOM) || (flags & DSR_ITEM_RIGHT && flags & DSR_ITEM_TOP))
+		setCursor(Qt::SizeBDiagCursor);
+	else if (flags & DSR_ITEM_LEFT || flags & DSR_ITEM_RIGHT)
+		setCursor(Qt::SizeHorCursor);
+	else
+		setCursor(Qt::SizeVerCursor);
+}
+
 void VerticalPreview::mouseReleaseEvent(QMouseEvent *event)
 {
 	if (event->button() == Qt::LeftButton) {
 		dragging = false;
-		resizing = false;
+		stretchHandle = 0;
+		cropping = false;
 	}
 }
 

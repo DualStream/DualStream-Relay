@@ -61,6 +61,8 @@ target_sources(
     src/ui/relay-module.cpp
     src/ui/vertical-common.cpp
     src/ui/vertical-preview.cpp
+    src/ui/vertical-preview-draw.cpp
+    src/ui/vertical-preview-edit.cpp
     src/ui/vertical-dock.cpp
     src/ui/vertical-sources-dock.cpp
     src/ui/destination-dialog.cpp
