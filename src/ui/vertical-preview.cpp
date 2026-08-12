@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "vertical-preview.hpp"
 
+#include <QContextMenuEvent>
 #include <QMouseEvent>
 #include <QResizeEvent>
 #include <QWheelEvent>
@@ -369,6 +370,23 @@ void VerticalPreview::setHoveredItem(obs_sceneitem_t *item)
 	if (hovered)
 		obs_sceneitem_release(hovered);
 	hovered = item;
+}
+
+QPoint VerticalPreview::mapFromCanvas(const QPointF &canvasPos) const
+{
+	const float scale = qMin((float)width() / kPortraitWidth, (float)height() / kPortraitHeight);
+	const float originX = (width() - kPortraitWidth * scale) / 2.0f;
+	const float originY = (height() - kPortraitHeight * scale) / 2.0f;
+	return QPoint((int)(canvasPos.x() * scale + originX), (int)(canvasPos.y() * scale + originY));
+}
+
+void VerticalPreview::contextMenuEvent(QContextMenuEvent *event)
+{
+	QPointF canvasPos;
+	if (!mapToCanvas(event->pos(), &canvasPos))
+		return;
+	showContextMenu(canvasPos);
+	event->accept();
 }
 
 void VerticalPreview::leaveEvent(QEvent *event)

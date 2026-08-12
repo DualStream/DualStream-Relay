@@ -199,18 +199,6 @@ void VerticalPreview::drawOverflow(obs_sceneitem_t *item)
 			return;
 	}
 
-	if (!stripedEffect) {
-		char *path = obs_module_file("effects/striped-line.effect");
-		if (path) {
-			char *errors = nullptr;
-			stripedEffect = gs_effect_create_from_file(path, &errors);
-			if (!stripedEffect)
-				obs_log(LOG_WARNING, "striped line effect failed: %s", errors ? errors : "unknown");
-			bfree(errors);
-			bfree(path);
-		}
-	}
-
 	if (!overflowEffect) {
 		char *path = obs_module_file("effects/overflow.effect");
 		if (!path)
@@ -249,6 +237,19 @@ void VerticalPreview::drawOverflow(obs_sceneitem_t *item)
 void VerticalPreview::drawCropSide(bool cropped, float x1, float y1, float x2, float y2, float thickness,
 				   struct vec2 boxScale, const struct vec4 &colour)
 {
+	if (cropped && !stripedEffect) {
+		char *path = obs_module_file("effects/striped-line.effect");
+		if (path) {
+			char *errors = nullptr;
+			stripedEffect = gs_effect_create_from_file(path, &errors);
+			if (!stripedEffect)
+				obs_log(LOG_WARNING, "striped line effect failed to compile: %s",
+					errors ? errors : "unknown");
+			bfree(errors);
+			bfree(path);
+		}
+	}
+
 	gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
 
 	if (!cropped || !stripedEffect) {
@@ -280,42 +281,48 @@ void VerticalPreview::drawSelection(obs_sceneitem_t *item, bool selected, float 
 	boxScale.x *= curTransform.x.x;
 	boxScale.y *= curTransform.y.y;
 
+	struct obs_sceneitem_crop crop;
+	obs_sceneitem_get_crop(item, &crop);
+	const bool cropped = selected && obs_sceneitem_get_bounds_type(item) == OBS_BOUNDS_NONE &&
+			     (crop.left > 0 || crop.top > 0 || crop.right > 0 || crop.bottom > 0);
+
 	gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
 	const struct vec4 colour = markerColor(selected);
-	gs_effect_set_vec4(gs_effect_get_param_by_name(solid, "color"), &colour);
-
-	gs_technique_t *tech = gs_effect_get_technique(solid, "Solid");
-	gs_technique_begin(tech);
-	gs_technique_begin_pass(tech, 0);
+	const float thickness = kHandleRadius * pixelRatio / 2.0f;
 
 	gs_matrix_push();
 	gs_matrix_mul(&boxTransform);
 
-	/* A cropped side is drawn as a green dashed line rather than a solid
-	 * one, which is how OBS shows where a crop is in effect. */
-	struct obs_sceneitem_crop crop;
-	obs_sceneitem_get_crop(item, &crop);
-	const float thickness = kHandleRadius * pixelRatio / 2.0f;
-	if (obs_sceneitem_get_bounds_type(item) == OBS_BOUNDS_NONE &&
-	    (crop.left > 0 || crop.top > 0 || crop.right > 0 || crop.bottom > 0)) {
+	/* Sides first, each running its own technique, then the handles in
+	 * one. Drawing a side inside an already open technique nests them,
+	 * which is why the dashed edges never appeared. */
+	if (cropped) {
 		drawCropSide(crop.left > 0, 0.0f, 0.0f, 0.0f, 1.0f, thickness, boxScale, colour);
 		drawCropSide(crop.top > 0, 0.0f, 0.0f, 1.0f, 0.0f, thickness, boxScale, colour);
 		drawCropSide(crop.right > 0, 1.0f, 0.0f, 1.0f, 1.0f, thickness, boxScale, colour);
 		drawCropSide(crop.bottom > 0, 0.0f, 1.0f, 1.0f, 1.0f, thickness, boxScale, colour);
 	} else {
-		drawBorder(thickness, boxScale);
+		gs_effect_set_vec4(gs_effect_get_param_by_name(solid, "color"), &colour);
+		while (gs_effect_loop(solid, "Solid"))
+			drawBorder(thickness, boxScale);
 	}
 
 	if (selected) {
+		gs_effect_set_vec4(gs_effect_get_param_by_name(solid, "color"), &colour);
+		gs_technique_t *tech = gs_effect_get_technique(solid, "Solid");
+		gs_technique_begin(tech);
+		gs_technique_begin_pass(tech, 0);
+
 		const float handles[8][2] = {{0.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 0.0f}, {1.0f, 1.0f},
 					     {0.5f, 0.0f}, {0.0f, 0.5f}, {0.5f, 1.0f}, {1.0f, 0.5f}};
 		for (const float *handle : handles)
 			drawHandle(handle[0], handle[1], pixelRatio, quad);
-	}
-	gs_matrix_pop();
 
-	gs_technique_end_pass(tech);
-	gs_technique_end(tech);
+		gs_technique_end_pass(tech);
+		gs_technique_end(tech);
+	}
+
+	gs_matrix_pop();
 	gs_load_vertexbuffer(nullptr);
 }
 

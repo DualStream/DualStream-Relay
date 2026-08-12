@@ -22,7 +22,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <QWidget>
 
-class QPoint;
 class QPushButton;
 class QStackedWidget;
 class VerticalCanvas;
@@ -46,7 +45,6 @@ private:
 	void refreshAll();
 	void toggleEnabled(bool on);
 	void tryAutoEnable();
-	void showPreviewMenu(const QPoint &where);
 
 	VerticalCanvas *manager;
 

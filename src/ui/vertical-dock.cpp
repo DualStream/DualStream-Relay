@@ -21,7 +21,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "vertical-dock.hpp"
 
 #include <QLabel>
-#include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QStackedWidget>
@@ -58,11 +57,10 @@ VerticalDock::VerticalDock(VerticalCanvas *manager, QWidget *parent) : QWidget(p
 
 	/* The preview fills the dock edge to edge. */
 	preview = new VerticalPreview(manager);
-	preview->setContextMenuPolicy(Qt::CustomContextMenu);
 	stack->addWidget(preview);
 
 	connect(setupButton, &QPushButton::clicked, this, [this]() { toggleEnabled(true); });
-	connect(preview, &QWidget::customContextMenuRequested, this, &VerticalDock::showPreviewMenu);
+	connect(preview, &VerticalPreview::disableRequested, this, [this]() { toggleEnabled(false); });
 	connect(manager, &VerticalCanvas::changed, this, &VerticalDock::refreshAll);
 
 	setStyleSheet(dsrVerticalStyleSheet());
@@ -73,13 +71,6 @@ VerticalDock::VerticalDock(VerticalCanvas *manager, QWidget *parent) : QWidget(p
 QSize VerticalDock::sizeHint() const
 {
 	return QSize(300, 640);
-}
-
-void VerticalDock::showPreviewMenu(const QPoint &where)
-{
-	QMenu menu(this);
-	menu.addAction(dsrText("Vertical.DisableTitle"), this, [this]() { toggleEnabled(false); });
-	menu.exec(preview->mapToGlobal(where));
 }
 
 void VerticalDock::toggleEnabled(bool on)

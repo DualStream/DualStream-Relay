@@ -29,6 +29,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <graphics/vec2.h>
 #include <obs.h>
 
+class QMenu;
 class VerticalCanvas;
 
 /* Live 9:16 view of the portrait canvas, drawn by libobs into this widget's
@@ -48,8 +49,13 @@ public:
 
 	QSize sizeHint() const override;
 
+signals:
+	/* Turning the canvas off belongs to the dock, which owns the confirm. */
+	void disableRequested();
+
 protected:
 	QPaintEngine *paintEngine() const override;
+	void contextMenuEvent(QContextMenuEvent *event) override;
 	void showEvent(QShowEvent *event) override;
 	void resizeEvent(QResizeEvent *event) override;
 	void mousePressEvent(QMouseEvent *event) override;
@@ -69,6 +75,14 @@ private:
 	void stretchItem(obs_sceneitem_t *item, const QPointF &canvasPos);
 	void cropItem(obs_sceneitem_t *item, const QPointF &canvasPos);
 	void updateCursor(const QPointF &canvasPos);
+
+	/* Implemented in vertical-preview-menu.cpp. */
+	void showContextMenu(const QPointF &canvasPos);
+	void buildAddSourceMenu(QMenu *menu);
+	void addSource(const char *id);
+
+	/* Canvas point back to a widget point, for placing the menu. */
+	QPoint mapFromCanvas(const QPointF &canvasPos) const;
 
 	static void drawCallback(void *param, uint32_t cx, uint32_t cy);
 
