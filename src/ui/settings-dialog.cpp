@@ -41,31 +41,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "../relay-output.h"
 #include "../vertical-canvas.hpp"
+#include "dsr-ui-common.hpp"
 #include "vertical-common.hpp"
-
-namespace {
-
-QString dsrText(const char *key)
-{
-	return QString::fromUtf8(obs_module_text(key));
-}
-
-QFrame *makeSeparator()
-{
-	QFrame *line = new QFrame;
-	line->setFrameShape(QFrame::HLine);
-	line->setFrameShadow(QFrame::Sunken);
-	return line;
-}
-
-QLabel *makeHeader(const char *key)
-{
-	QLabel *label = new QLabel(dsrText(key));
-	label->setStyleSheet(QStringLiteral("font-weight: 600;"));
-	return label;
-}
-
-} // namespace
 
 SettingsDialog::SettingsDialog(RelayAuth *auth, RelayStatus *status, QWidget *parent)
 	: QDialog(parent),
@@ -77,7 +54,7 @@ SettingsDialog::SettingsDialog(RelayAuth *auth, RelayStatus *status, QWidget *pa
 
 	QVBoxLayout *layout = new QVBoxLayout(this);
 
-	layout->addWidget(makeHeader("Settings.Account"));
+	layout->addWidget(dsrMakeSectionHeader("Settings.Account"));
 	QHBoxLayout *accountRow = new QHBoxLayout;
 	QLabel *emailLabel = new QLabel(!auth->signedIn()         ? dsrText("Settings.NotSignedIn")
 					: auth->email().isEmpty() ? dsrText("Settings.SignedIn")
@@ -93,9 +70,9 @@ SettingsDialog::SettingsDialog(RelayAuth *auth, RelayStatus *status, QWidget *pa
 	accountRow->addWidget(signOutButton);
 	layout->addLayout(accountRow);
 
-	layout->addWidget(makeSeparator());
+	layout->addWidget(dsrMakeSeparator());
 
-	layout->addWidget(makeHeader("Settings.Protection"));
+	layout->addWidget(dsrMakeSectionHeader("Settings.Protection"));
 	protectionCheck = new QCheckBox(dsrText("Settings.ProtectionToggle"));
 	protectionCheck->setEnabled(false);
 	connect(protectionCheck, &QCheckBox::toggled, this, [this](bool on) {
@@ -112,8 +89,8 @@ SettingsDialog::SettingsDialog(RelayAuth *auth, RelayStatus *status, QWidget *pa
 	layout->addWidget(protectionNote);
 
 	if (VerticalCanvas::instance()) {
-		layout->addWidget(makeSeparator());
-		layout->addWidget(makeHeader("Settings.Vertical"));
+		layout->addWidget(dsrMakeSeparator());
+		layout->addWidget(dsrMakeSectionHeader("Settings.Vertical"));
 		layout->addWidget(buildVerticalToggle());
 		QLabel *verticalNote = new QLabel(dsrText("Settings.VerticalNote"));
 		verticalNote->setWordWrap(true);
@@ -121,9 +98,9 @@ SettingsDialog::SettingsDialog(RelayAuth *auth, RelayStatus *status, QWidget *pa
 		layout->addWidget(verticalNote);
 	}
 
-	layout->addWidget(makeSeparator());
+	layout->addWidget(dsrMakeSeparator());
 
-	layout->addWidget(makeHeader("Settings.Streaming"));
+	layout->addWidget(dsrMakeSectionHeader("Settings.Streaming"));
 	targetLabel = new QLabel;
 	targetLabel->setWordWrap(true);
 	targetLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -149,7 +126,7 @@ SettingsDialog::SettingsDialog(RelayAuth *auth, RelayStatus *status, QWidget *pa
 	routeRow->addStretch();
 	layout->addLayout(routeRow);
 
-	layout->addWidget(makeSeparator());
+	layout->addWidget(dsrMakeSeparator());
 
 	QHBoxLayout *linksRow = new QHBoxLayout;
 	QPushButton *accountLink = new QPushButton(dsrText("Settings.OpenAccount"));
@@ -166,9 +143,9 @@ SettingsDialog::SettingsDialog(RelayAuth *auth, RelayStatus *status, QWidget *pa
 	linksNote->setStyleSheet(QStringLiteral("color: #8a8a8a;"));
 	layout->addWidget(linksNote);
 
-	layout->addWidget(makeSeparator());
+	layout->addWidget(dsrMakeSeparator());
 
-	layout->addWidget(makeHeader("Settings.Diagnostics"));
+	layout->addWidget(dsrMakeSectionHeader("Settings.Diagnostics"));
 	QLabel *versionLabel =
 		new QLabel(QStringLiteral("%1 %2").arg(dsrText("Settings.Version"), QLatin1String(PLUGIN_VERSION)));
 	layout->addWidget(versionLabel);

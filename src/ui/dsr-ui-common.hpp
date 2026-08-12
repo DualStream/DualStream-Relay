@@ -22,12 +22,23 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <QString>
 
+class QFrame;
+class QLabel;
 class QWidget;
 
 /* Helpers every dock in this plugin needs. They live here so the docks share
  * one implementation rather than each carrying its own copy. */
 
 QString dsrText(const char *key);
+
+/* Display name of a destination's canvas: "landscape", "portrait" or "both". */
+QString dsrCanvasDisplay(const QString &canvas);
+
+/* Horizontal rule between sections of a dialog. */
+QFrame *dsrMakeSeparator();
+
+/* Bold section heading from a locale key. */
+QLabel *dsrMakeSectionHeader(const char *key);
 
 /* Re-evaluate a widget's style after a dynamic property changed. */
 void dsrRepolish(QWidget *widget);

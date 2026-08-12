@@ -41,15 +41,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace {
 
-QString canvasDisplay(const QString &canvas)
-{
-	if (canvas == QLatin1String("portrait"))
-		return dsrText("Canvas.Portrait");
-	if (canvas == QLatin1String("both"))
-		return dsrText("Canvas.Both");
-	return dsrText("Canvas.Landscape");
-}
-
 QString platformName(const QString &platform)
 {
 	if (platform == QLatin1String("twitch"))
@@ -377,7 +368,7 @@ QWidget *RelayDock::makeRow(const DsrDestination &dest, const DsrDestStatus *liv
 		state->setText(dsrText(stateKey.constData()));
 		lineLayout->addWidget(state);
 	} else {
-		QLabel *canvas = new QLabel(canvasDisplay(dest.canvas));
+		QLabel *canvas = new QLabel(dsrCanvasDisplay(dest.canvas));
 		canvas->setObjectName(QStringLiteral("canvasBadge"));
 		lineLayout->addWidget(canvas);
 	}

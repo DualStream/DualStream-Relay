@@ -48,10 +48,15 @@ public:
 			  QWidget *parent = nullptr);
 
 private:
+	/* Implemented in destination-dialog-add.cpp. */
 	void buildAddUi();
-	void buildEditUi();
 	void loadSuggestions();
+	QWidget *makeSuggestionRow(const DsrSuggestion &suggestion);
+	QWidget *makeAddedRow(const DsrSuggestion &suggestion);
+	static QString suggestionName(const DsrSuggestion &suggestion);
 	void submitCustom();
+
+	void buildEditUi();
 	void submitEdit();
 	void showError(const QString &errorKey);
 

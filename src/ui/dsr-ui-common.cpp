@@ -21,8 +21,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "dsr-ui-common.hpp"
 
 #include <QFile>
+#include <QFrame>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLabel>
 #include <QSaveFile>
 #include <QStyle>
 #include <QWidget>
@@ -47,6 +49,30 @@ QString settingsFilePath()
 QString dsrText(const char *key)
 {
 	return QString::fromUtf8(obs_module_text(key));
+}
+
+QString dsrCanvasDisplay(const QString &canvas)
+{
+	if (canvas == QLatin1String("portrait"))
+		return dsrText("Canvas.Portrait");
+	if (canvas == QLatin1String("both"))
+		return dsrText("Canvas.Both");
+	return dsrText("Canvas.Landscape");
+}
+
+QFrame *dsrMakeSeparator()
+{
+	QFrame *line = new QFrame;
+	line->setFrameShape(QFrame::HLine);
+	line->setFrameShadow(QFrame::Sunken);
+	return line;
+}
+
+QLabel *dsrMakeSectionHeader(const char *key)
+{
+	QLabel *label = new QLabel(dsrText(key));
+	label->setStyleSheet(QStringLiteral("font-weight: 600;"));
+	return label;
 }
 
 void dsrRepolish(QWidget *widget)

@@ -18,14 +18,14 @@ You should have received a copy of the GNU General Public License along
 with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
+/* The dialog shell: canvas rules shared by both modes, the constructors, and
+ * everything the edit mode needs. Add mode lives in destination-dialog-add.cpp. */
+
 #include "destination-dialog.hpp"
 
-#include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
-#include <QFrame>
-#include <QHBoxLayout>
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
@@ -34,35 +34,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPushButton>
 #include <QVBoxLayout>
 
-#include <obs-module.h>
-
-#include <algorithm>
-
-namespace {
-
-QString dsrText(const char *key)
-{
-	return QString::fromUtf8(obs_module_text(key));
-}
-
-QString canvasDisplay(const QString &canvas)
-{
-	if (canvas == QLatin1String("portrait"))
-		return dsrText("Canvas.Portrait");
-	if (canvas == QLatin1String("both"))
-		return dsrText("Canvas.Both");
-	return dsrText("Canvas.Landscape");
-}
-
-QFrame *makeSeparator()
-{
-	QFrame *line = new QFrame;
-	line->setFrameShape(QFrame::HLine);
-	line->setFrameShadow(QFrame::Sunken);
-	return line;
-}
-
-} // namespace
+#include "dsr-ui-common.hpp"
 
 QStringList DestinationDialog::allowedCanvases(const QString &platform)
 {
@@ -81,7 +53,7 @@ void DestinationDialog::fillCanvasCombo(QComboBox *combo, const QString &platfor
 	const QStringList allowed = allowedCanvases(platform);
 	combo->clear();
 	for (const QString &canvas : allowed)
-		combo->addItem(canvasDisplay(canvas), canvas);
+		combo->addItem(dsrCanvasDisplay(canvas), canvas);
 
 	int index = combo->findData(selected);
 	combo->setCurrentIndex(index >= 0 ? index : 0);
@@ -117,210 +89,6 @@ DestinationDialog::DestinationDialog(RelayAuth *auth, RelayDestinations *destina
 	buildEditUi();
 }
 
-void DestinationDialog::buildAddUi()
-{
-	setMinimumWidth(420);
-	QVBoxLayout *layout = new QVBoxLayout(this);
-
-	QLabel *accountsHeader = new QLabel(dsrText("Destinations.ConnectedAccounts"));
-	accountsHeader->setStyleSheet(QStringLiteral("font-weight: 600;"));
-	layout->addWidget(accountsHeader);
-
-	QWidget *suggestionHost = new QWidget;
-	suggestionLayout = new QVBoxLayout(suggestionHost);
-	suggestionLayout->setContentsMargins(0, 0, 0, 0);
-	suggestionEmptyLabel = new QLabel(dsrText("Destinations.LoadingAccounts"));
-	suggestionEmptyLabel->setWordWrap(true);
-	suggestionLayout->addWidget(suggestionEmptyLabel);
-	layout->addWidget(suggestionHost);
-
-	layout->addWidget(makeSeparator());
-
-	QLabel *customHeader = new QLabel(dsrText("Destinations.CustomRtmp"));
-	customHeader->setStyleSheet(QStringLiteral("font-weight: 600;"));
-	layout->addWidget(customHeader);
-
-	QFormLayout *form = new QFormLayout;
-	presetCombo = new QComboBox;
-	presetCombo->addItem(dsrText("Destinations.Preset.Generic"), QString());
-	presetCombo->addItem(dsrText("Destinations.Preset.TikTok"), QStringLiteral("tiktok"));
-	presetCombo->addItem(dsrText("Destinations.Preset.Facebook"), QStringLiteral("facebook"));
-	presetCombo->addItem(dsrText("Destinations.Preset.FacebookReels"), QStringLiteral("facebook_reels"));
-	form->addRow(dsrText("Destinations.Platform"), presetCombo);
-
-	labelEdit = new QLineEdit;
-	form->addRow(dsrText("Destinations.Label"), labelEdit);
-
-	serverEdit = new QLineEdit;
-	serverEdit->setPlaceholderText(QStringLiteral("rtmp://"));
-	form->addRow(dsrText("Destinations.Server"), serverEdit);
-
-	keyEdit = new QLineEdit;
-	keyEdit->setEchoMode(QLineEdit::Password);
-	form->addRow(dsrText("Destinations.StreamKey"), keyEdit);
-
-	canvasCombo = new QComboBox;
-	canvasNote = new QLabel;
-	canvasNote->setWordWrap(true);
-	canvasNote->setVisible(false);
-	fillCanvasCombo(canvasCombo, QString(), QStringLiteral("landscape"), canvasNote);
-	form->addRow(dsrText("Destinations.Canvas"), canvasCombo);
-	layout->addLayout(form);
-	layout->addWidget(canvasNote);
-
-	connect(presetCombo, &QComboBox::currentIndexChanged, this, [this]() {
-		const QString preset = presetCombo->currentData().toString();
-		const QString suggested =
-			(preset == QLatin1String("tiktok") || preset == QLatin1String("facebook_reels"))
-				? QStringLiteral("portrait")
-				: canvasCombo->currentData().toString();
-		fillCanvasCombo(canvasCombo, QString(), suggested, canvasNote);
-	});
-
-	customAddButton = new QPushButton(dsrText("Destinations.Add"));
-	customAddButton->setObjectName(QStringLiteral("primaryButton"));
-	connect(customAddButton, &QPushButton::clicked, this, &DestinationDialog::submitCustom);
-	QHBoxLayout *customButtonRow = new QHBoxLayout;
-	customButtonRow->addStretch();
-	customButtonRow->addWidget(customAddButton);
-	layout->addLayout(customButtonRow);
-
-	layout->addWidget(makeSeparator());
-
-	termsCheck = new QCheckBox(dsrText("Destinations.TermsAck"));
-	layout->addWidget(termsCheck);
-
-	errorLabel = new QLabel;
-	errorLabel->setWordWrap(true);
-	errorLabel->setStyleSheet(QStringLiteral("color: #EF4444;"));
-	errorLabel->setVisible(false);
-	layout->addWidget(errorLabel);
-
-	QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
-	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-	buttons->button(QDialogButtonBox::Close)->setText(dsrText("Button.Close"));
-	layout->addWidget(buttons);
-}
-
-void DestinationDialog::loadSuggestions()
-{
-	QPointer<DestinationDialog> self(this);
-	destinations->fetchDiscover([self](bool ok, QVector<DsrSuggestion> suggestions) {
-		if (!self)
-			return;
-		DestinationDialog *dlg = self.data();
-
-		if (!ok) {
-			dlg->suggestionEmptyLabel->setText(dsrText("Destinations.AccountsUnavailable"));
-			return;
-		}
-
-		suggestions.erase(std::remove_if(suggestions.begin(), suggestions.end(),
-						 [](const DsrSuggestion &s) { return s.alreadyAdded; }),
-				  suggestions.end());
-
-		if (suggestions.isEmpty()) {
-			dlg->suggestionEmptyLabel->setText(dsrText("Destinations.NoAccounts"));
-			return;
-		}
-
-		dlg->suggestionEmptyLabel->setVisible(false);
-		for (const DsrSuggestion &suggestion : suggestions) {
-			QWidget *row = new QWidget(dlg);
-			QHBoxLayout *rowLayout = new QHBoxLayout(row);
-			rowLayout->setContentsMargins(0, 2, 0, 2);
-
-			QLabel *name = new QLabel(
-				suggestion.label.isEmpty()
-					? QStringLiteral("%1 - %2").arg(suggestion.platform, suggestion.username)
-					: suggestion.label);
-			rowLayout->addWidget(name, 1);
-
-			QComboBox *canvas = new QComboBox;
-			fillCanvasCombo(canvas, suggestion.platform,
-					suggestion.suggestedCanvas.isEmpty() ? QStringLiteral("landscape")
-									     : suggestion.suggestedCanvas,
-					nullptr);
-			rowLayout->addWidget(canvas);
-
-			QPushButton *add = new QPushButton(dsrText("Destinations.Add"));
-			rowLayout->addWidget(add);
-
-			const QString platform = suggestion.platform;
-			const QString accountId = suggestion.accountId;
-			QObject::connect(add, &QPushButton::clicked, dlg, [self, platform, accountId, canvas, add]() {
-				if (!self)
-					return;
-				if (!self->termsCheck->isChecked()) {
-					self->showError(QStringLiteral("Error.TermsRequired"));
-					return;
-				}
-				add->setEnabled(false);
-
-				QJsonObject body;
-				body.insert(QStringLiteral("type"), QStringLiteral("oauth"));
-				body.insert(QStringLiteral("platform"), platform);
-				body.insert(QStringLiteral("connected_account_id"), accountId);
-				body.insert(QStringLiteral("canvas"), canvas->currentData().toString());
-				body.insert(QStringLiteral("terms_ack"), true);
-
-				QPointer<QPushButton> addGuard(add);
-				self->destinations->create(body, [self, addGuard](bool ok, QString errorKey) {
-					if (!self)
-						return;
-					if (ok) {
-						if (addGuard)
-							addGuard->setText(dsrText("Destinations.Added"));
-					} else {
-						if (addGuard)
-							addGuard->setEnabled(true);
-						self->showError(errorKey);
-					}
-				});
-			});
-
-			dlg->suggestionLayout->addWidget(row);
-		}
-	});
-}
-
-void DestinationDialog::submitCustom()
-{
-	if (!termsCheck->isChecked()) {
-		showError(QStringLiteral("Error.TermsRequired"));
-		return;
-	}
-	if (serverEdit->text().trimmed().isEmpty() || keyEdit->text().isEmpty()) {
-		showError(QStringLiteral("Error.MissingRtmp"));
-		return;
-	}
-
-	QJsonObject body;
-	body.insert(QStringLiteral("type"), QStringLiteral("custom"));
-	body.insert(QStringLiteral("platform"), QStringLiteral("custom"));
-	const QString preset = presetCombo->currentData().toString();
-	if (!preset.isEmpty())
-		body.insert(QStringLiteral("custom_platform"), preset);
-	body.insert(QStringLiteral("rtmp_url"), serverEdit->text().trimmed());
-	body.insert(QStringLiteral("rtmp_key"), keyEdit->text());
-	body.insert(QStringLiteral("canvas"), canvasCombo->currentData().toString());
-	if (!labelEdit->text().trimmed().isEmpty())
-		body.insert(QStringLiteral("label"), labelEdit->text().trimmed());
-	body.insert(QStringLiteral("terms_ack"), true);
-
-	customAddButton->setEnabled(false);
-	QPointer<DestinationDialog> self(this);
-	destinations->create(body, [self](bool ok, QString errorKey) {
-		if (!self)
-			return;
-		self->customAddButton->setEnabled(true);
-		if (ok)
-			self->accept();
-		else
-			self->showError(errorKey);
-	});
-}
-
 void DestinationDialog::buildEditUi()
 {
 	setMinimumWidth(420);
@@ -353,10 +121,8 @@ void DestinationDialog::buildEditUi()
 	layout->addWidget(canvasNote);
 
 	if (existing.platform == QLatin1String("youtube")) {
-		layout->addWidget(makeSeparator());
-		QLabel *ytHeader = new QLabel(dsrText("Destinations.YouTubeMeta"));
-		ytHeader->setStyleSheet(QStringLiteral("font-weight: 600;"));
-		layout->addWidget(ytHeader);
+		layout->addWidget(dsrMakeSeparator());
+		layout->addWidget(dsrMakeSectionHeader("Destinations.YouTubeMeta"));
 
 		const QJsonObject meta = existing.metadata.value(QStringLiteral("youtube")).toObject();
 		QFormLayout *ytForm = new QFormLayout;

@@ -68,6 +68,7 @@ target_sources(
     src/ui/vertical-dock.cpp
     src/ui/vertical-sources-dock.cpp
     src/ui/destination-dialog.cpp
+    src/ui/destination-dialog-add.cpp
     src/ui/settings-dialog.cpp
 )
 
