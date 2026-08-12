@@ -49,10 +49,6 @@ public:
 
 	QSize sizeHint() const override;
 
-signals:
-	/* Turning the canvas off belongs to the dock, which owns the confirm. */
-	void disableRequested();
-
 protected:
 	QPaintEngine *paintEngine() const override;
 	void contextMenuEvent(QContextMenuEvent *event) override;

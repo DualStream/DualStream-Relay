@@ -11,3 +11,9 @@ Initial release.
 - Clean session end on Stop Streaming and on OBS exit, so platforms end
   immediately instead of holding on the standby screen.
 - End-stream hotkey.
+- Vertical canvas: a 9:16 counterpart of every scene, sharing your sources
+  with its own layout and visibility, published as a second SRT ingest for
+  portrait destinations.
+- Scene switches transition on the vertical canvas with a copy of the
+  transition OBS ran, started at the same moment, including per-scene
+  transition overrides.

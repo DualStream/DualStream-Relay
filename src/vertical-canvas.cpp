@@ -61,10 +61,15 @@ VerticalCanvas *VerticalCanvas::instance()
 VerticalCanvas::VerticalCanvas(QObject *parent) : QObject(parent)
 {
 	singleton = this;
+	/* Connected for the lifetime of the plugin so the transition mirror
+	 * follows every swap of OBS's program channel, including the temporary
+	 * one a per-scene override does. */
+	signal_handler_connect(obs_get_signal_handler(), "channel_change", onChannelChange, this);
 }
 
 VerticalCanvas::~VerticalCanvas()
 {
+	signal_handler_disconnect(obs_get_signal_handler(), "channel_change", onChannelChange, this);
 	teardown();
 	singleton = nullptr;
 }
@@ -79,18 +84,25 @@ obs_canvas_t *VerticalCanvas::canvasRef() const
 	return canvas ? obs_canvas_get_ref(canvas) : nullptr;
 }
 
+obs_source_t *VerticalCanvas::counterpartOf(obs_source_t *landscapeScene) const
+{
+	if (!canvas || !landscapeScene)
+		return nullptr;
+
+	const char *name = obs_source_get_name(landscapeScene);
+	if (!name)
+		return nullptr;
+
+	obs_scene_t *counterpart = obs_canvas_get_scene_by_name(canvas, name);
+	return counterpart ? obs_scene_get_source(counterpart) : nullptr;
+}
+
 obs_source_t *VerticalCanvas::currentCounterpart() const
 {
-	if (!canvas)
-		return nullptr;
-
 	obs_source_t *current = obs_frontend_get_current_scene();
-	if (!current)
-		return nullptr;
-
-	obs_scene_t *counterpart = obs_canvas_get_scene_by_name(canvas, obs_source_get_name(current));
+	obs_source_t *counterpart = counterpartOf(current);
 	obs_source_release(current);
-	return counterpart ? obs_scene_get_source(counterpart) : nullptr;
+	return counterpart;
 }
 
 void VerticalCanvas::setEnabled(bool on)
@@ -107,12 +119,14 @@ void VerticalCanvas::setEnabled(bool on)
 			return;
 		}
 		reconcileScenes();
-		retargetChannel();
+		hookCurrentTransition();
+		showCurrentScene();
 		obs_log(LOG_INFO, "vertical canvas enabled");
 	} else {
 		setSelectedItemId(-1);
 		stopOutput(true);
 		releaseOutput();
+		releaseTransition();
 		disconnectAllSceneSignals();
 		obs_frontend_remove_canvas(canvas);
 		obs_canvas_release(canvas);
@@ -159,7 +173,8 @@ void VerticalCanvas::adopt()
 	if (canvas) {
 		ensureVideo();
 		reconcileScenes();
-		retargetChannel();
+		hookCurrentTransition();
+		showCurrentScene();
 	}
 
 	/* Emitted with or without a canvas: the dock's default-on behavior
@@ -172,6 +187,7 @@ void VerticalCanvas::teardown()
 	setSelectedItemId(-1);
 	stopOutput(true);
 	releaseOutput();
+	releaseTransition();
 	disconnectAllSceneSignals();
 	if (canvas) {
 		obs_canvas_release(canvas);
@@ -188,18 +204,6 @@ void VerticalCanvas::ensureVideo()
 	portraitVideoInfo(&ovi);
 	if (!obs_canvas_reset_video(canvas, &ovi))
 		obs_log(LOG_WARNING, "vertical canvas video could not be restored; is an output active?");
-}
-
-/* Point the canvas at the portrait counterpart of whatever landscape scene is
- * live, so a scene switch carries across. */
-void VerticalCanvas::retargetChannel()
-{
-	if (!canvas)
-		return;
-
-	obs_source_t *counterpart = currentCounterpart();
-	obs_canvas_set_channel(canvas, 0, counterpart);
-	obs_source_release(counterpart);
 }
 
 void VerticalCanvas::handleFrontendEvent(enum obs_frontend_event event)
@@ -219,14 +223,17 @@ void VerticalCanvas::handleFrontendEvent(enum obs_frontend_event event)
 		adopt();
 		break;
 	case OBS_FRONTEND_EVENT_SCENE_CHANGED:
-		/* The selection names an item of the outgoing scene. */
+		/* Raised once the transition has finished, by which point the
+		 * portrait mix has run its own copy of it; this settles the
+		 * result rather than moving it. The selection names an item of
+		 * the outgoing scene. */
 		setSelectedItemId(-1);
-		retargetChannel();
+		showCurrentScene();
 		emit changed();
 		break;
 	case OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED:
 		reconcileScenes();
-		retargetChannel();
+		showCurrentScene();
 		emit changed();
 		break;
 	case OBS_FRONTEND_EVENT_STREAMING_STARTED:

@@ -46,6 +46,7 @@ signals:
 private:
 	void refreshTarget();
 	void loadProtection();
+	QCheckBox *buildVerticalToggle();
 	QString buildDiagnostics() const;
 
 	RelayAuth *auth;

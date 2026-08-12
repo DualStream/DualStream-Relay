@@ -23,12 +23,14 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "relay-dock.hpp"
 
 #include <QHBoxLayout>
+#include <QJsonObject>
 #include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPen>
 #include <QPixmap>
+#include <QPushButton>
 #include <QVBoxLayout>
 
 #include <obs-module.h>
@@ -209,8 +211,102 @@ QPixmap platformMarkPixmap(const QString &key, int side, qreal ratio)
 
 } // namespace
 
+/* Ask before changing a destination mid-stream. Turning one off takes a
+ * platform down for people already watching it, and turning one on puts the
+ * stream somewhere the user may not have meant it to go, so neither happens on
+ * a single stray click. Off-air the switch stays immediate. */
+bool RelayDock::confirmToggleWhileLive(const DsrDestination &dest, bool wanted)
+{
+	if (current != State::Live && current != State::Protected)
+		return true;
+
+	QMessageBox box(this);
+	box.setWindowTitle(dsrText(wanted ? "Destinations.ToggleOnTitle" : "Destinations.ToggleOffTitle"));
+	box.setText(QString(dsrText(wanted ? "Destinations.ToggleOnConfirm" : "Destinations.ToggleOffConfirm"))
+			    .arg(platformDisplay(dest)));
+	QPushButton *confirm = box.addButton(dsrText(wanted ? "Destinations.ToggleOnAction"
+							    : "Destinations.ToggleOffAction"),
+					     QMessageBox::AcceptRole);
+	box.addButton(dsrText("Button.Cancel"), QMessageBox::RejectRole);
+	box.setDefaultButton(confirm);
+	box.exec();
+	return box.clickedButton() == confirm;
+}
+
+void RelayDock::requestToggle(const DsrDestination &dest, bool wanted)
+{
+	if (!confirmToggleWhileLive(dest, wanted)) {
+		/* Put the switch back. The row is rebuilt from the list, so what
+		 * lands on screen is the value the server last gave us. */
+		refreshUi();
+		return;
+	}
+
+	const QString id = dest.id;
+	pendingToggles.insert(id, {wanted, true});
+	refreshUi();
+
+	QJsonObject body;
+	body.insert(QStringLiteral("enabled"), wanted);
+	destinations->modify(id, body, [this, id](bool ok, QString errorKey) {
+		const auto entry = pendingToggles.find(id);
+		if (entry == pendingToggles.end())
+			return;
+
+		if (ok) {
+			/* Accepted. The chosen value stays on screen until the
+			 * refreshed list carries it, which is where rebuildRows
+			 * drops the entry. */
+			entry->inFlight = false;
+		} else {
+			pendingToggles.erase(entry);
+			QMessageBox::warning(this, dsrText("Dock.Title"), dsrText(errorKey.toUtf8().constData()));
+		}
+		refreshUi();
+	});
+}
+
+DsrSwitch *RelayDock::makeDestToggle(const DsrDestination &dest)
+{
+	const auto pending = pendingToggles.constFind(dest.id);
+	const bool hasPending = pending != pendingToggles.constEnd();
+
+	DsrSwitch *toggle = new DsrSwitch;
+	toggle->setChecked(hasPending ? pending->enabled : dest.enabled);
+	toggle->setEnabled(!(hasPending && pending->inFlight));
+	toggle->setToolTip(dsrText("Destinations.EnabledTip"));
+
+	/* By value: the list this came from is replaced wholesale on every
+	 * refresh, and the row outlives the loop that built it. */
+	const DsrDestination copy = dest;
+	connect(toggle, &QAbstractButton::clicked, this, [this, copy](bool checked) { requestToggle(copy, checked); });
+	return toggle;
+}
+
+/* Forget a pending toggle once the list agrees with it, or once the
+ * destination it belonged to is gone. */
+void RelayDock::prunePendingToggles()
+{
+	for (auto it = pendingToggles.begin(); it != pendingToggles.end();) {
+		const DsrDestination *dest = nullptr;
+		for (const DsrDestination &candidate : destinations->list()) {
+			if (candidate.id == it.key()) {
+				dest = &candidate;
+				break;
+			}
+		}
+
+		if (!dest || (!it->inFlight && it->enabled == dest->enabled))
+			it = pendingToggles.erase(it);
+		else
+			++it;
+	}
+}
+
 void RelayDock::rebuildRows()
 {
+	prunePendingToggles();
+
 	/* Drop everything but the trailing stretch, then rebuild. The list is
 	 * at most eight rows, so rebuilding beats bookkeeping. */
 	while (listLayout->count() > 1) {
@@ -263,9 +359,17 @@ QWidget *RelayDock::makeRow(const DsrDestination &dest, const DsrDestStatus *liv
 	name->setMinimumWidth(0);
 	lineLayout->addWidget(name, 1);
 
-	/* While live, the state word replaces the canvas badge: the canvas is a
+	/* A switch the user has moved says so until the server answers, since
+	 * that is the only thing on the row that has changed yet. Otherwise,
+	 * while live, the state word replaces the canvas badge: the canvas is a
 	 * setup detail and the state is what matters mid-stream. */
-	if (live && !live->state.isEmpty()) {
+	const auto pending = pendingToggles.constFind(dest.id);
+	if (pending != pendingToggles.constEnd() && pending->inFlight) {
+		QLabel *state = new QLabel(dsrText("Destinations.Applying"));
+		state->setObjectName(QStringLiteral("destState"));
+		state->setProperty("state", QStringLiteral("applying"));
+		lineLayout->addWidget(state);
+	} else if (live && !live->state.isEmpty()) {
 		QLabel *state = new QLabel;
 		state->setObjectName(QStringLiteral("destState"));
 		state->setProperty("state", live->state);
@@ -278,16 +382,9 @@ QWidget *RelayDock::makeRow(const DsrDestination &dest, const DsrDestStatus *liv
 		lineLayout->addWidget(canvas);
 	}
 
-	DsrSwitch *toggle = new DsrSwitch;
-	toggle->setChecked(dest.enabled);
-	toggle->setToolTip(dsrText("Destinations.EnabledTip"));
+	lineLayout->addWidget(makeDestToggle(dest));
+
 	const QString id = dest.id;
-	connect(toggle, &QAbstractButton::clicked, this, [this, id](bool checked) {
-		QJsonObject body;
-		body.insert(QStringLiteral("enabled"), checked);
-		destinations->modify(id, body, nullptr);
-	});
-	lineLayout->addWidget(toggle);
 
 	DsrIconButton *menuButton = new DsrIconButton(DsrIconButton::Glyph::Kebab);
 	QMenu *menu = new QMenu(menuButton);

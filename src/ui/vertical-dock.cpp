@@ -21,7 +21,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "vertical-dock.hpp"
 
 #include <QLabel>
-#include <QMessageBox>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QVBoxLayout>
@@ -60,7 +59,6 @@ VerticalDock::VerticalDock(VerticalCanvas *manager, QWidget *parent) : QWidget(p
 	stack->addWidget(preview);
 
 	connect(setupButton, &QPushButton::clicked, this, [this]() { toggleEnabled(true); });
-	connect(preview, &VerticalPreview::disableRequested, this, [this]() { toggleEnabled(false); });
 	connect(manager, &VerticalCanvas::changed, this, &VerticalDock::refreshAll);
 
 	setStyleSheet(dsrVerticalStyleSheet());
@@ -75,22 +73,7 @@ QSize VerticalDock::sizeHint() const
 
 void VerticalDock::toggleEnabled(bool on)
 {
-	if (!on && manager->enabled()) {
-		QMessageBox box(this);
-		box.setWindowTitle(dsrText("Vertical.DisableTitle"));
-		box.setText(dsrText("Vertical.DisableConfirm"));
-		QPushButton *confirm = box.addButton(dsrText("Vertical.DisableTitle"), QMessageBox::AcceptRole);
-		box.addButton(dsrText("Button.Cancel"), QMessageBox::RejectRole);
-		box.setDefaultButton(confirm);
-		box.exec();
-		if (box.clickedButton() != confirm)
-			return;
-	}
-
-	/* Remember an explicit off across restarts; anything else means the
-	 * canvas comes up with the dock. */
-	dsrWriteFlag(kVerticalOffFlag, !on);
-	manager->setEnabled(on);
+	dsrSetVerticalEnabled(this, on);
 	refreshAll();
 }
 

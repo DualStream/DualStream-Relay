@@ -28,6 +28,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "../vertical-geometry.hpp"
 
+class QWidget;
 class VerticalCanvas;
 
 /* Shared by the preview and both vertical docks. */
@@ -42,6 +43,11 @@ class VerticalCanvas;
 
 /* Settings key recording that the user turned the canvas off on purpose. */
 extern const char *kVerticalOffFlag;
+
+/* Turn the portrait canvas on or off and record the choice. Turning it off
+ * asks first, since the portrait layouts go with it. Returns false when the
+ * user backed out, so a checkbox can put itself back. */
+bool dsrSetVerticalEnabled(QWidget *parent, bool on);
 
 /* Colour of the dock behind the 9:16 frame, for obs_display_create. The frame
  * itself is filled black by the preview so the canvas edges read clearly

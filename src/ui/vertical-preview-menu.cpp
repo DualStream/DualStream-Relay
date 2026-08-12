@@ -243,9 +243,5 @@ void VerticalPreview::showContextMenu(const QPointF &canvasPos)
 		obs_sceneitem_release(item);
 	}
 
-	menu.addSeparator();
-	QAction *disable = menu.addAction(dsrText("Vertical.DisableTitle"));
-	connect(disable, &QAction::triggered, this, [this]() { emit disableRequested(); });
-
 	menu.exec(mapToGlobal(mapFromCanvas(canvasPos)));
 }

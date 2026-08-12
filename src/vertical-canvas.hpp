@@ -99,7 +99,6 @@ private:
 	void teardown();
 	void ensureVideo();
 	void reconcileScenes();
-	void retargetChannel();
 	void seedCounterpart(obs_source_t *landscapeScene);
 	void connectSceneSignals(obs_source_t *landscapeScene);
 	void disconnectAllSceneSignals();
@@ -111,6 +110,19 @@ private:
 	void stopOutput(bool force);
 	void releaseOutput();
 
+	/* Implemented in vertical-transition.cpp. */
+	void showCurrentScene();
+	void hookCurrentTransition();
+	void hookMainTransition(obs_source_t *next);
+	void matchTransition(obs_source_t *main);
+	void mirrorTransition(obs_source_t *main);
+	int mirroredDuration(obs_source_t *destScene) const;
+	void releaseTransition();
+
+	/* Portrait counterpart of a landscape scene, referenced; the caller
+	 * releases it. NULL when there is none. */
+	obs_source_t *counterpartOf(obs_source_t *landscapeScene) const;
+
 	void connectCounterpartSignals(obs_scene_t *portrait);
 
 	static void onItemsChanged(void *data, calldata_t *cd);
@@ -119,8 +131,17 @@ private:
 	static void onItemLocked(void *data, calldata_t *cd);
 	static void onSceneReordered(void *data, calldata_t *cd);
 	static void onOutputStopped(void *data, calldata_t *cd);
+	static void onChannelChange(void *data, calldata_t *cd);
+	static void onMainTransitionStart(void *data, calldata_t *cd);
 
 	obs_canvas_t *canvas = nullptr;
+
+	/* The canvas program channel holds this, not a scene: it is a private
+	 * copy of OBS's own transition, driven from the same signal, so a scene
+	 * switch animates on both mixes together. */
+	obs_source_t *transition = nullptr;
+	obs_weak_source_t *hookedTransition = nullptr;
+	QString transitionSettings;
 
 	/* Landscape scene uuid to weak scene source, for the scenes whose
 	 * signals are connected. Weak because the scene's death is exactly the

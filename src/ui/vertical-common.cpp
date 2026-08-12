@@ -21,6 +21,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "vertical-common.hpp"
 
 #include <QMainWindow>
+#include <QMessageBox>
+#include <QPushButton>
 #include <QWidget>
 
 #include <obs-frontend-api.h>
@@ -71,6 +73,33 @@ QColor dsrObsPreviewBackground()
 	}
 	/* GREY_COLOR_BACKGROUND, the value every theme starts from. */
 	return QColor::fromRgb(0x4C, 0x4C, 0x4C);
+}
+
+bool dsrSetVerticalEnabled(QWidget *parent, bool on)
+{
+	VerticalCanvas *manager = VerticalCanvas::instance();
+	if (!manager)
+		return false;
+
+	/* Turning it off discards every portrait layout, so it is confirmed the
+	 * way OBS confirms removing a scene. */
+	if (!on && manager->enabled()) {
+		QMessageBox box(parent);
+		box.setWindowTitle(dsrText("Vertical.DisableTitle"));
+		box.setText(dsrText("Vertical.DisableConfirm"));
+		QPushButton *confirm = box.addButton(dsrText("Vertical.DisableTitle"), QMessageBox::AcceptRole);
+		box.addButton(dsrText("Button.Cancel"), QMessageBox::RejectRole);
+		box.setDefaultButton(confirm);
+		box.exec();
+		if (box.clickedButton() != confirm)
+			return false;
+	}
+
+	/* Remember an explicit off across restarts; anything else means the
+	 * canvas comes up with the dock. */
+	dsrWriteFlag(kVerticalOffFlag, !on);
+	manager->setEnabled(on);
+	return true;
 }
 
 obs_sceneitem_t *dsrFindCounterpartItem(VerticalCanvas *manager, int64_t itemId)

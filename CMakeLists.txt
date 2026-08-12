@@ -49,6 +49,7 @@ target_sources(
     src/vertical-canvas.cpp
     src/vertical-scenes.cpp
     src/vertical-output.cpp
+    src/vertical-transition.cpp
     src/ui/dsr-source-icon.cpp
     src/ui/dsr-ui-common.cpp
     src/ui/dsr-widgets.cpp

@@ -70,6 +70,7 @@ QString dsrRelayStyleSheet()
 #destState[state="reconnecting"] { color: #E8981C; }
 #destState[state="rejected"]     { color: #F87171; font-weight: 600; }
 #destState[state="ended"]        { color: palette(text); }
+#destState[state="applying"]     { color: #E8981C; }
 #destError { color: #F87171; font-size: 11px; }
 #canvasBadge {
 	color: palette(text);

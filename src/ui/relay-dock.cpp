@@ -230,7 +230,6 @@ void RelayDock::refreshUi()
 	countLabel->setVisible(configState && destinations->loaded());
 	countLabel->setText(
 		QString(dsrText("Footer.Count")).arg(destinations->list().size()).arg(destinations->maxDestinations()));
-	statsLabel->setVisible(liveish && state != State::Ending);
 	/* Only shown while protected. When the stream is healthy, OBS's own
 	 * Stop Streaming is the single stop control, and a second button
 	 * beside it would end the relay session while OBS kept publishing
@@ -261,17 +260,6 @@ void RelayDock::refreshTick()
 		timerLabel->setText(elapsedText());
 		if (current == State::Protected)
 			banner->setText(protectedBannerText());
-
-		struct dsr_local_stats stats;
-		dsr_get_local_stats(&stats);
-		if (stats.active && stats.total_frames > 0) {
-			const double percent = 100.0 * stats.dropped_frames / stats.total_frames;
-			statsLabel->setText(QString(dsrText("Footer.Uplink"))
-						    .arg(stats.dropped_frames)
-						    .arg(QString::number(percent, 'f', 1)));
-		} else {
-			statsLabel->setText(QString());
-		}
 
 		auth->ensureFreshToken();
 	}

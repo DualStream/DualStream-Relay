@@ -40,6 +40,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 
 #include "../relay-output.h"
+#include "../vertical-canvas.hpp"
+#include "vertical-common.hpp"
 
 namespace {
 
@@ -108,6 +110,16 @@ SettingsDialog::SettingsDialog(RelayAuth *auth, RelayStatus *status, QWidget *pa
 	protectionNote->setWordWrap(true);
 	protectionNote->setStyleSheet(QStringLiteral("color: #8a8a8a;"));
 	layout->addWidget(protectionNote);
+
+	if (VerticalCanvas::instance()) {
+		layout->addWidget(makeSeparator());
+		layout->addWidget(makeHeader("Settings.Vertical"));
+		layout->addWidget(buildVerticalToggle());
+		QLabel *verticalNote = new QLabel(dsrText("Settings.VerticalNote"));
+		verticalNote->setWordWrap(true);
+		verticalNote->setStyleSheet(QStringLiteral("color: #8a8a8a;"));
+		layout->addWidget(verticalNote);
+	}
 
 	layout->addWidget(makeSeparator());
 
@@ -181,6 +193,28 @@ SettingsDialog::SettingsDialog(RelayAuth *auth, RelayStatus *status, QWidget *pa
 
 	refreshTarget();
 	loadProtection();
+}
+
+/* The one switch for the portrait canvas. It lives here rather than on the
+ * vertical dock because turning it off throws the portrait layouts away and
+ * would end a portrait stream in progress; closing a dock must not do either. */
+QCheckBox *SettingsDialog::buildVerticalToggle()
+{
+	QCheckBox *check = new QCheckBox(dsrText("Settings.VerticalToggle"));
+	VerticalCanvas *vertical = VerticalCanvas::instance();
+	check->setChecked(vertical->enabled());
+	check->setEnabled(vertical->ready());
+
+	connect(check, &QCheckBox::toggled, this, [check](bool on) {
+		if (dsrSetVerticalEnabled(check->window(), on))
+			return;
+		/* Backed out of the confirmation, so the box goes back without
+		 * running this again. */
+		const QSignalBlocker blocker(check);
+		check->setChecked(!on);
+	});
+
+	return check;
 }
 
 void SettingsDialog::refreshTarget()

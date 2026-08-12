@@ -173,10 +173,6 @@ RelayDock::RelayDock(QWidget *parent) : QWidget(parent)
 	addButton->setToolTip(dsrText("Footer.AddDestination"));
 	connect(addButton, &QAbstractButton::clicked, this, &RelayDock::openAddDialog);
 	footerLayout->addWidget(addButton);
-	statsLabel = new QLabel;
-	statsLabel->setObjectName(QStringLiteral("mutedText"));
-	statsLabel->setVisible(false);
-	footerLayout->addWidget(statsLabel);
 	footerLayout->addStretch();
 	countLabel = new QLabel;
 	countLabel->setObjectName(QStringLiteral("mutedText"));

@@ -21,6 +21,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #pragma once
 
 #include <QDateTime>
+#include <QHash>
 #include <QStringList>
 #include <QWidget>
 
@@ -99,6 +100,10 @@ private:
 	QString blockingSetupIssue() const;
 	void openEditDialog(const QString &destinationId);
 	QWidget *makeRow(const DsrDestination &dest, const DsrDestStatus *live);
+	DsrSwitch *makeDestToggle(const DsrDestination &dest);
+	void requestToggle(const DsrDestination &dest, bool wanted);
+	bool confirmToggleWhileLive(const DsrDestination &dest, bool wanted);
+	void prunePendingToggles();
 	QString elapsedText() const;
 	QString protectedBannerText() const;
 	QString outputMismatch() const;
@@ -137,7 +142,6 @@ private:
 	/* footer */
 	QWidget *footer;
 	DsrIconButton *addButton;
-	QLabel *statsLabel;
 	QLabel *countLabel;
 	QPushButton *endButton;
 
@@ -152,6 +156,17 @@ private:
 	QString lastEnvironment;
 	qint64 localStreamStartMs = 0;
 	QDateTime protectedLocalSince;
+
+	/* A destination switch the user has moved but the server has not
+	 * confirmed. `enabled` is the value they chose, which the row shows in
+	 * place of the stale list value, and `inFlight` holds the switch
+	 * disabled while the request is still out. Keyed by destination id so
+	 * it survives the row rebuild that every refresh does. */
+	struct PendingToggle {
+		bool enabled = false;
+		bool inFlight = false;
+	};
+	QHash<QString, PendingToggle> pendingToggles;
 
 	QString targetServer;
 	QString targetKey;
