@@ -124,9 +124,8 @@ void DestinationDialog::buildEditUi()
 		reveal->setObjectName(QStringLiteral("secondaryButton"));
 		reveal->setCheckable(true);
 		reveal->setCursor(Qt::PointingHandCursor);
-		connect(reveal, &QPushButton::toggled, this, [this](bool on) {
-			keyEdit->setEchoMode(on ? QLineEdit::Normal : QLineEdit::Password);
-		});
+		connect(reveal, &QPushButton::toggled, this,
+			[this](bool on) { keyEdit->setEchoMode(on ? QLineEdit::Normal : QLineEdit::Password); });
 		QHBoxLayout *keyRow = new QHBoxLayout;
 		keyRow->setContentsMargins(0, 0, 0, 0);
 		keyRow->addWidget(keyEdit, 1);

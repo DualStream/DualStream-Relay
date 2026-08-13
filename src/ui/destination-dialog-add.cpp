@@ -215,8 +215,7 @@ QWidget *DestinationDialog::makeAccountRow(const DsrSuggestion &suggestion)
 
 	QComboBox *canvas = new QComboBox;
 	fillCanvasCombo(canvas, suggestion.platform,
-			suggestion.suggestedCanvas.isEmpty() ? QStringLiteral("landscape")
-							     : suggestion.suggestedCanvas,
+			suggestion.suggestedCanvas.isEmpty() ? QStringLiteral("landscape") : suggestion.suggestedCanvas,
 			nullptr);
 	rowLayout->addWidget(canvas);
 

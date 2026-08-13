@@ -218,8 +218,7 @@ void RelayAuth::loadState()
 	 * save puts them away properly. */
 	const QString sealed = obj.value(QStringLiteral("tokens")).toString();
 	if (!sealed.isEmpty()) {
-		const QJsonObject tokens =
-			QJsonDocument::fromJson(dsrSecretUnprotectText(sealed).toUtf8()).object();
+		const QJsonObject tokens = QJsonDocument::fromJson(dsrSecretUnprotectText(sealed).toUtf8()).object();
 		accessToken = tokens.value(QStringLiteral("access_token")).toString();
 		refreshValue = tokens.value(QStringLiteral("refresh_token")).toString();
 		return;

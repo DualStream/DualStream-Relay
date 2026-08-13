@@ -166,15 +166,16 @@ void RelayDestinations::modify(const QString &id, const QJsonObject &patchBody, 
 
 void RelayDestinations::remove(const QString &id, std::function<void(bool, QString)> done)
 {
-	auth->del(QStringLiteral("/api/relay/destinations/%1").arg(pathSegment(id)), [this, done](const DsrApiResult &result) {
-		if (result.ok()) {
-			refresh();
-			if (done)
-				done(true, QString());
-		} else if (done) {
-			done(false, failureKey(result));
-		}
-	});
+	auth->del(QStringLiteral("/api/relay/destinations/%1").arg(pathSegment(id)),
+		  [this, done](const DsrApiResult &result) {
+			  if (result.ok()) {
+				  refresh();
+				  if (done)
+					  done(true, QString());
+			  } else if (done) {
+				  done(false, failureKey(result));
+			  }
+		  });
 }
 
 void RelayDestinations::test(const QString &id, std::function<void(bool, bool)> done)

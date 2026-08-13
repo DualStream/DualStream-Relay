@@ -51,7 +51,15 @@ runs:
         if (( ${+RUNNER_DEBUG} )) setopt XTRACE
 
         print ::group::Install clang-format-19
-        brew install --quiet obsproject/tools/clang-format@19
+        # From pip, not the obsproject Homebrew tap: that formula no longer
+        # parses on the runner's Homebrew ("unknown install step: run") and
+        # took the whole job down with it. The version is exact because
+        # build-aux/run-clang-format rejects anything other than 19.1.1, newer
+        # included, so CI and a contributor's machine format identically.
+        python3 -m pip install --quiet --disable-pip-version-check 'clang-format==19.1.1'
+        print "$(python3 -m site --user-base)/bin" >> $GITHUB_PATH
+        export PATH="$(python3 -m site --user-base)/bin:$PATH"
+        clang-format --version
         print ::endgroup::
 
         print ::group::Run clang-format-19

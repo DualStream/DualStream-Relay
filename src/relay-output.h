@@ -87,18 +87,18 @@ bool dsr_route_restore(void);
 bool dsr_route_have_snapshot(void);
 
 struct dsr_local_stats {
-    bool active;
-    int total_frames;
-    int dropped_frames;
-    float congestion;
+	bool active;
+	int total_frames;
+	int dropped_frames;
+	float congestion;
 };
 
 void dsr_get_local_stats(struct dsr_local_stats *stats);
 
 struct dsr_video_summary {
-    uint32_t output_width;
-    uint32_t output_height;
-    double fps;
+	uint32_t output_width;
+	uint32_t output_height;
+	double fps;
 };
 
 bool dsr_get_video_summary(struct dsr_video_summary *summary);
@@ -115,9 +115,9 @@ bool dsr_get_video_summary(struct dsr_video_summary *summary);
  * mode has no keyframe-interval field at all, so only the bitrate is ours to
  * touch there. */
 struct dsr_encoder_settings {
-    bool advanced;
-    int video_bitrate_kbps;
-    int keyint_sec;
+	bool advanced;
+	int video_bitrate_kbps;
+	int keyint_sec;
 };
 
 bool dsr_encoder_read(struct dsr_encoder_settings *out);

@@ -85,9 +85,9 @@ bool RelayDock::confirmToggleWhileLive(const DsrDestination &dest, bool wanted)
 	box.setWindowTitle(dsrText(wanted ? "Destinations.ToggleOnTitle" : "Destinations.ToggleOffTitle"));
 	box.setText(QString(dsrText(wanted ? "Destinations.ToggleOnConfirm" : "Destinations.ToggleOffConfirm"))
 			    .arg(platformDisplay(dest)));
-	QPushButton *confirm = box.addButton(dsrText(wanted ? "Destinations.ToggleOnAction"
-							    : "Destinations.ToggleOffAction"),
-					     QMessageBox::AcceptRole);
+	QPushButton *confirm =
+		box.addButton(dsrText(wanted ? "Destinations.ToggleOnAction" : "Destinations.ToggleOffAction"),
+			      QMessageBox::AcceptRole);
 	box.addButton(dsrText("Button.Cancel"), QMessageBox::RejectRole);
 	box.setDefaultButton(confirm);
 	box.exec();
