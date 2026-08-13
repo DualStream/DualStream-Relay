@@ -42,6 +42,11 @@ struct DsrDestination {
 	QJsonObject metadata;
 };
 
+/* The codes the API answers with when an account is not entitled. Shared so
+ * every caller that has to recognise a refusal agrees on what one looks
+ * like. */
+bool dsrIsEntitlementCode(const QString &code);
+
 struct DsrSuggestion {
 	QString platform;
 	QString label;
@@ -84,9 +89,16 @@ public:
 signals:
 	void changed();
 	void loadFailed(int status, const QString &code, bool transportOk);
+	/* A call that only an entitled account may make was refused. Reads stay
+	 * open to a lapsed account, so this is the first moment anything here
+	 * learns the subscription is not active. */
+	void entitlementInactive();
 
 private:
 	void fetchLimits();
+	/* errorKeyFor, plus raising entitlementInactive when that is what the
+	 * refusal was. Every write path answers through this. */
+	QString failureKey(const DsrApiResult &result);
 
 	RelayAuth *auth;
 	QVector<DsrDestination> items;

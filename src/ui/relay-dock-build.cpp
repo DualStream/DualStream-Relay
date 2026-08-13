@@ -225,9 +225,15 @@ RelayDock::RelayDock(QWidget *parent) : QWidget(parent)
 		refreshUi();
 	});
 
+	/* Listing destinations succeeding says nothing about entitlement: reads
+	 * stay open to a lapsed account by design. Only the gated calls move
+	 * that flag, so it is deliberately left alone here. */
 	connect(destinations, &RelayDestinations::changed, this, [this]() {
-		lapsed = false;
 		destOffline = false;
+		refreshUi();
+	});
+	connect(destinations, &RelayDestinations::entitlementInactive, this, [this]() {
+		lapsed = true;
 		refreshUi();
 	});
 	connect(destinations, &RelayDestinations::loadFailed, this,
@@ -237,8 +243,7 @@ RelayDock::RelayDock(QWidget *parent) : QWidget(parent)
 			} else if (httpStatus == 401) {
 				/* Token dead even after a refresh attempt. */
 				auth->signOut();
-			} else if (httpStatus == 403 && (code == QLatin1String("ENTITLEMENT_INACTIVE") ||
-							 code == QLatin1String("SUBSCRIPTION_INACTIVE"))) {
+			} else if (httpStatus == 403 && dsrIsEntitlementCode(code)) {
 				lapsed = true;
 			}
 			refreshUi();

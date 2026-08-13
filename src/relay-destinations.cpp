@@ -145,7 +145,7 @@ void RelayDestinations::create(const QJsonObject &body, std::function<void(bool,
 				done(true, QString(), id);
 			}
 		} else if (done) {
-			done(false, errorKeyFor(result), QString());
+			done(false, failureKey(result), QString());
 		}
 	});
 }
@@ -159,7 +159,7 @@ void RelayDestinations::modify(const QString &id, const QJsonObject &patchBody, 
 				    if (done)
 					    done(true, QString());
 			    } else if (done) {
-				    done(false, errorKeyFor(result));
+				    done(false, failureKey(result));
 			    }
 		    });
 }
@@ -172,7 +172,7 @@ void RelayDestinations::remove(const QString &id, std::function<void(bool, QStri
 			if (done)
 				done(true, QString());
 		} else if (done) {
-			done(false, errorKeyFor(result));
+			done(false, failureKey(result));
 		}
 	});
 }
@@ -205,12 +205,26 @@ bool RelayDestinations::hasEnabledTwitch() const
 	return false;
 }
 
+bool dsrIsEntitlementCode(const QString &code)
+{
+	return code == QLatin1String("ENTITLEMENT_INACTIVE") || code == QLatin1String("SUBSCRIPTION_INACTIVE");
+}
+
+QString RelayDestinations::failureKey(const DsrApiResult &result)
+{
+	if (result.status == 403 && dsrIsEntitlementCode(result.code()))
+		emit entitlementInactive();
+	return errorKeyFor(result);
+}
+
 QString RelayDestinations::errorKeyFor(const DsrApiResult &result)
 {
 	if (!result.transportOk)
 		return QStringLiteral("Error.Network");
 
 	const QString code = result.code();
+	if (dsrIsEntitlementCode(code))
+		return QStringLiteral("Error.EntitlementInactive");
 	if (code == QLatin1String("LIMIT_REACHED"))
 		return QStringLiteral("Error.LimitReached");
 	if (code == QLatin1String("SLOT_TAKEN"))

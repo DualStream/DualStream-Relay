@@ -46,10 +46,22 @@ void RelayDock::fetchIngestTarget(std::function<void(bool)> done)
 	auth->get(QStringLiteral("/api/relay/ingest-target"), [this, done](const DsrApiResult &result) {
 		targetFetchInFlight = false;
 		if (!result.ok()) {
+			/* This route is gated on entitlement, so its refusal is
+			 * the authoritative answer the ungated reads cannot
+			 * give. Anything else here is a transport or server
+			 * problem the banner already covers. */
+			if (result.status == 403 && dsrIsEntitlementCode(result.code())) {
+				lapsed = true;
+				refreshUi();
+			}
 			if (done)
 				done(false);
 			return;
 		}
+
+		/* Handing over a target means the account passed the same gate,
+		 * which is the only positive proof of entitlement available. */
+		lapsed = false;
 
 		const QJsonObject target = result.body.value(QStringLiteral("target")).toObject();
 		targetServer.clear();
