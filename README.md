@@ -34,15 +34,22 @@ works. That is being sorted out.
 
 ## Installing it
 
-1. Download the Windows installer from the
-   [releases page](https://github.com/DualStream/DualStream_OBS_Plugin/releases).
+1. Go to the
+   [releases page](https://github.com/DualStream/DualStream_OBS_Plugin/releases)
+   and download the file ending in `-windows-x64.zip`.
 2. Close OBS if it is open.
-3. Run the installer.
-4. Open OBS again.
+3. Right-click the downloaded file and choose **Extract All**.
+4. Open the extracted folder. Inside you will find a folder called
+   `obs-plugins` and a folder called `data`.
+5. Press **Windows key + R**, type `%ProgramData%\obs-studio\plugins` and
+   press Enter. If a folder called `obs-dualstream-relay` is not already
+   there, create one and open it.
+6. Copy the `obs-plugins` and `data` folders from step 4 into it.
+7. Open OBS again.
 
-That is the whole thing. A panel called **DualStream Relay** appears the
-first time. If you ever close it and want it back, look under the **Docks**
-menu at the top of OBS, or under **Tools**.
+A panel called **DualStream Relay** appears the first time. If you ever
+close it and want it back, look under the **Docks** menu at the top of OBS,
+or under **Tools**.
 
 ## Using it for the first time
 

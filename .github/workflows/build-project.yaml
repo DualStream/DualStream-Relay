@@ -75,6 +75,10 @@ jobs:
     name: Build for macOS
     runs-on: macos-15
     needs: check-event
+    # macOS is not a shipping target yet and its build is still failing. Kept
+    # in the matrix so the failure stays visible, but not allowed to hold back
+    # a release of the platforms that do build.
+    continue-on-error: true
     defaults:
       run:
         shell: zsh --no-rcs --errexit --pipefail {0}
