@@ -1,91 +1,127 @@
 # DualStream Relay for OBS
 
-Stream to multiple platforms from OBS Studio through the DualStream relay.
-OBS sends one stream; the relay delivers it to every destination you enable
-(Twitch, YouTube, Kick, or any custom RTMP target). If your connection drops
-mid-stream, the relay keeps your channels live on your standby screen and
-picks the stream back up when you reconnect.
+Go live on Twitch, YouTube, Kick and more at the same time, without your
+computer having to upload a separate stream to each one.
 
-The plugin adds a dock to OBS that manages destinations, shows per-platform
-status while you are live, and ends the session cleanly when you press Stop
-Streaming. It adds no second start button and never encodes or uploads video
-itself: your existing Start Streaming button does what it always did, with
-the stream routed through the relay.
+Normally, streaming to three platforms at once means uploading your video
+three times over. Most home internet connections cannot manage that. This
+plugin sends your video once, to DualStream, and DualStream passes it on to
+every platform you have turned on. Your upload stays the same whether you
+are live on one platform or six.
 
-Using the relay requires a DualStream account. Learn more at
+It also covers you when your internet drops. Instead of your viewers seeing
+the stream cut out, your platforms stay live showing a standby screen you
+have set up, and your stream picks up where it left off once you reconnect.
+
+You keep using OBS exactly as you do today. There is no second Start button
+to learn. You press Start Streaming like always, and the plugin quietly
+points that stream at DualStream instead of a single platform.
+
+You need a DualStream account to use it. See
 [dualstream.gg/relay](https://dualstream.gg/relay).
 
-## Features
+## What you need
 
-- One upload, every destination. Destination count does not change your
-  upload bandwidth.
-- Disconnect protection: platforms stay live on your standby screen through
-  connection drops, with an on-screen countdown in the dock.
-- Destination management in OBS: connected accounts are one click, custom
-  RTMP targets take a URL and a key, and enable/disable applies within a few
-  seconds even mid-stream.
-- Live status per destination, including the relay's own error message when
-  a platform rejects the stream.
-- A vertical canvas: a 9:16 counterpart of every scene, sharing your sources
-  with its own layout and visibility, published alongside the landscape
-  stream for portrait destinations.
-- Sign-in happens in your browser. The plugin never sees your password.
-
-## Requirements
-
-- OBS Studio 31.1 or newer (Windows, macOS, or Linux)
+- A Windows PC
+- OBS Studio version 31.1 or newer
 - A DualStream account
 
-## Installation
+**Windows only for now.** macOS and Linux are not supported yet. The code is
+written to run on them and the build system covers them, but no working
+macOS or Linux build has been produced, so we are not going to claim it
+works. That is being sorted out.
 
-Download the installer or archive for your platform from the releases page
-and follow the standard OBS plugin installation steps. After restarting OBS,
-the dock opens once automatically; it is also available under Docks and
-under Tools in the menu.
+## Installing it
 
-## What the plugin stores on your machine
+1. Download the Windows installer from the
+   [releases page](https://github.com/DualStream/DualStream_OBS_Plugin/releases).
+2. Close OBS if it is open.
+3. Run the installer.
+4. Open OBS again.
 
-Everything lives in the plugin's own OBS configuration directory, readable
-only by your user account.
+That is the whole thing. A panel called **DualStream Relay** appears the
+first time. If you ever close it and want it back, look under the **Docks**
+menu at the top of OBS, or under **Tools**.
 
-- **Sign-in tokens.** Written on sign-in, cleared on sign-out. On Windows
-  they are encrypted with DPAPI, which ties them to your Windows account.
-  macOS and Linux have no secret store wired up yet, so on those platforms
-  the tokens are stored as plain text.
-- **Custom RTMP server and stream key.** Kept only so the edit dialog can
-  show what a destination is set to; the relay is the authority. Same
-  encryption, and on a platform without a secret store nothing is written at
-  all and the fields simply come up blank. Removed with the destination, and
-  cleared entirely on sign-out.
+## Using it for the first time
 
-Nothing else is stored, and nothing is sent anywhere except the DualStream
-API. Sign-in tokens travel over HTTPS with certificate verification on and
-redirects refused, so they only ever reach the host you configured.
+1. In the DualStream Relay panel, press **Sign in**. Your web browser opens
+   and shows you a short code. Approve it there. The panel updates on its
+   own once you are done.
+2. Press the **+** button at the bottom of the panel to add somewhere to
+   stream to. Platforms you have already connected to your DualStream
+   account are one click. Anything else takes a server address and a stream
+   key, which that platform gives you.
+3. Press **Start Streaming** in OBS, the same button you always use.
 
-## Building
+The panel shows each platform going live one by one while you stream. If a
+platform refuses the stream, the panel shows you the reason in plain words.
 
-The project uses the OBS plugin template build system. With CMake 3.28 or
-newer installed:
+## What it does
+
+**One upload, every platform.** Adding a fourth or fifth platform does not
+cost you any extra upload speed.
+
+**Stays live when your internet drops.** Your platforms keep showing your
+standby screen instead of ending the stream, and the panel counts down how
+long you have to reconnect.
+
+**Turn platforms on and off mid-stream.** Flip a switch and that platform
+joins or leaves within a few seconds. You do not have to stop streaming. It
+asks you to confirm first, so a stray click cannot knock a platform offline.
+
+**Live status for every platform**, including the exact error a platform
+gave if it turned the stream away.
+
+**A vertical version of your scenes.** For TikTok, Reels and YouTube Shorts,
+which want a tall video rather than a wide one. You get a second canvas with
+a 9:16 counterpart of every scene. It shares the same cameras and sources as
+your normal scenes, but you arrange them separately, and you choose which
+ones show up. It is sent alongside your normal stream, not instead of it.
+
+**You never type your password into OBS.** Signing in happens in your
+browser.
+
+## What gets saved on your computer
+
+Everything below lives in the plugin's own folder inside your OBS settings,
+which only your Windows account can read.
+
+**Your sign-in.** Saved when you sign in so you do not have to sign in every
+time you open OBS. Deleted when you sign out. Windows encrypts it and ties
+it to your Windows account, so another account on the same PC cannot read
+it.
+
+**Server addresses and stream keys** for any custom platform you added by
+hand. Saved only so the edit screen can show you what a destination is
+currently set to. DualStream is the real home for these. Encrypted the same
+way, deleted when you remove that destination, and wiped completely when you
+sign out.
+
+Nothing else is saved, and nothing is sent anywhere except to DualStream.
+
+## For developers
+
+Built with the OBS plugin template build system. You need CMake 3.28 or
+newer.
 
 ```
 cmake --preset windows-x64
 cmake --build --preset windows-x64
 ```
 
-The `macos` and `ubuntu-x86_64` presets work the same way on those
-platforms. Dependencies (OBS sources, prebuilt libraries, and Qt) are
-downloaded automatically as pinned in `buildspec.json`.
-
-## Contributing
+Dependencies (OBS sources, prebuilt libraries and Qt) download automatically,
+pinned in `buildspec.json`. The `macos` and `ubuntu-x86_64` presets exist and
+are configured, but are not currently producing working builds.
 
 Contributions are welcome. Before your first commit, install the pre-commit
-hook so the character checks run locally:
+hook so the repository checks run on your machine:
 
 ```
 cp tools/hooks/pre-commit .git/hooks/pre-commit
 ```
 
-The same checks run in CI on every pull request.
+The same checks run automatically on every pull request.
 
 ## Credits
 
@@ -94,18 +130,19 @@ Built on [OBS Studio](https://obsproject.com) and started from the
 Thanks to the OBS Project and its contributors for the platform and the
 tooling that make plugins like this one possible.
 
-Two files are copied verbatim from OBS Studio so the vertical canvas draws
-its out-of-bounds hatch and spacing guides exactly as the main preview does:
-`data/images/overflow.png` and `data/effects/striped-line.effect`. They are
-Copyright (C) OBS Studio contributors, GPL-2.0-or-later, and are used here
-under the same license as the rest of this project.
+Two files are copied unchanged from OBS Studio, so the vertical canvas draws
+its out-of-bounds shading and spacing guides exactly the way the main OBS
+preview does: `data/images/overflow.png` and
+`data/effects/striped-line.effect`. They are Copyright (C) OBS Studio
+contributors, GPL-2.0-or-later, and are used here under the same license as
+the rest of this project.
 
 ## Trademarks
 
-The platform logos under `data/images/platform/` are the trademarks of their
-respective owners and are included solely to identify the destination each
-row sends to, in line with each platform's brand guidelines. They are not
-covered by this project's license, and their inclusion does not imply any
+The platform logos in `data/images/platform/` are the trademarks of their
+respective owners. They are included only to show which platform each row in
+the panel sends to, following each platform's own brand guidelines. They are
+not covered by this project's license, and including them does not imply any
 endorsement, sponsorship or affiliation.
 
 ## License
