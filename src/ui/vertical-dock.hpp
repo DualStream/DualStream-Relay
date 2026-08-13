@@ -22,14 +22,21 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <QWidget>
 
+#include "../vertical-canvas.hpp"
+
+class QLabel;
 class QPushButton;
 class QStackedWidget;
-class VerticalCanvas;
 class VerticalPreview;
 
-/* The portrait canvas preview and nothing else. Every pixel of the dock goes
- * to the 9:16 frame, so there is no header and no hint line; turning the
- * canvas off lives in the preview's context menu. */
+/* The portrait canvas preview. Every pixel the dock can spare goes to the 9:16
+ * frame, so there is no header and no hint line; turning the canvas off lives
+ * in the preview's context menu.
+ *
+ * The one exception is the bar along the bottom, and only when a locally held
+ * destination takes the mobile program. OBS's Start Streaming always carries
+ * the desktop canvas, so that bar is the only control that can put this one on
+ * air, and it reports where the publish has got to while it does. */
 class VerticalDock : public QWidget {
 	Q_OBJECT
 
@@ -44,12 +51,17 @@ protected:
 private:
 	void refreshAll();
 	void toggleEnabled(bool on);
+	void toggleDirect();
+	void applyDirectPhase(VerticalCanvas::DirectPhase phase);
 	void tryAutoEnable();
 
 	VerticalCanvas *manager;
 
 	QStackedWidget *stack;
 	QWidget *offPage;
+	QWidget *goLiveBar = nullptr;
+	QLabel *livePill = nullptr;
+	QPushButton *goLiveButton = nullptr;
 	QPushButton *setupButton;
 	VerticalPreview *preview;
 };

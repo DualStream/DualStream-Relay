@@ -138,6 +138,21 @@ void VerticalCanvas::setEnabled(bool on)
 	emit changed();
 }
 
+/* Only the relay dock knows whether the subscription is active, so it says so
+ * here rather than this class reaching for it. */
+void VerticalCanvas::setDirectAllowed(bool allowed)
+{
+	if (directAllowedFlag == allowed)
+		return;
+	directAllowedFlag = allowed;
+	emit changed();
+}
+
+void VerticalCanvas::notifyDirectChanged()
+{
+	emit changed();
+}
+
 void VerticalCanvas::setPortraitTarget(const QString &server, const QString &key)
 {
 	portraitServer = server;

@@ -56,14 +56,30 @@ const char *pickEncoderId()
 
 } // namespace
 
+/* obs_output_start returning true only means the request was accepted. The
+ * output is not on air until it has connected, which is what this announces,
+ * so nothing has to guess from a return value that arrives too early. */
+void VerticalCanvas::onOutputStarted(void *data, calldata_t *)
+{
+	VerticalCanvas *self = static_cast<VerticalCanvas *>(data);
+	QMetaObject::invokeMethod(
+		self,
+		[self]() {
+			if (self->directPublish)
+				self->setDirectPhase(DirectPhase::Live);
+			emit self->publishingChanged(true);
+		},
+		Qt::QueuedConnection);
+}
+
 void VerticalCanvas::onOutputStopped(void *data, calldata_t *)
 {
 	VerticalCanvas *self = static_cast<VerticalCanvas *>(data);
 	QMetaObject::invokeMethod(self, [self]() { self->releaseOutput(); }, Qt::QueuedConnection);
 }
 
-/* Start the publish once everything it needs is true: the canvas exists, OBS
- * is streaming, the landscape output points at the relay, an enabled
+/* Start the relay publish once everything it needs is true: the canvas exists,
+ * OBS is streaming, the landscape output points at the relay, an enabled
  * destination takes the portrait canvas, and the target is known. Called from
  * every place one of those can flip, so a destination enabled mid-stream
  * still brings the portrait feed up. */
@@ -76,18 +92,62 @@ void VerticalCanvas::maybeStartOutput()
 	if (!obs_frontend_streaming_active() || !dsr_route_is_relay())
 		return;
 
+	startOutput(portraitServer, portraitKey, true);
+}
+
+/* Publish the portrait program straight to an RTMP server, with no relay in
+ * the path and nothing required of OBS's own stream output. This is the only
+ * way the portrait canvas can reach anywhere on its own: OBS's Start Streaming
+ * always carries the main canvas, so a portrait-only destination has to be
+ * driven from here. */
+bool VerticalCanvas::startDirect(const QString &server, const QString &key)
+{
+	if (!canvas || publishing() || server.isEmpty() || key.isEmpty())
+		return false;
+
+	/* Set after the attempt, because starting tears down any previous one
+	 * and that teardown resets the phase. */
+	if (!startOutput(server, key, false))
+		return false;
+
+	setDirectPhase(DirectPhase::Starting);
+	return true;
+}
+
+void VerticalCanvas::stopDirect()
+{
+	if (directPhaseValue == DirectPhase::Idle)
+		return;
+
+	setDirectPhase(DirectPhase::Stopping);
+	stopOutput(false);
+}
+
+void VerticalCanvas::setDirectPhase(DirectPhase phase)
+{
+	if (directPhaseValue == phase)
+		return;
+	directPhaseValue = phase;
+	emit directPhaseChanged();
+}
+
+/* The publish itself, shared by both paths. Transport decides the muxer: the
+ * relay speaks SRT, which rides MPEG-TS, and a plain RTMP server takes OBS's
+ * own RTMP output. */
+bool VerticalCanvas::startOutput(const QString &server, const QString &key, bool srt)
+{
 	ensureVideo();
 	video_t *video = obs_canvas_get_video(canvas);
 	if (!video) {
 		obs_log(LOG_WARNING, "portrait output skipped: canvas has no video mix");
-		return;
+		return false;
 	}
 
 	releaseOutput();
 
 	obs_data_t *serviceSettings = obs_data_create();
-	obs_data_set_string(serviceSettings, "server", portraitServer.toUtf8().constData());
-	obs_data_set_string(serviceSettings, "key", portraitKey.toUtf8().constData());
+	obs_data_set_string(serviceSettings, "server", server.toUtf8().constData());
+	obs_data_set_string(serviceSettings, "key", key.toUtf8().constData());
 	obs_data_set_bool(serviceSettings, "use_auth", false);
 	service = obs_service_create_private("rtmp_custom", "dsr_vertical_service", serviceSettings);
 	obs_data_release(serviceSettings);
@@ -113,17 +173,18 @@ void VerticalCanvas::maybeStartOutput()
 	if (!videoEncoder || !audioEncoder) {
 		obs_log(LOG_ERROR, "portrait encoders could not be created (%s)", encoderId);
 		releaseOutput();
-		return;
+		return false;
 	}
 
 	obs_encoder_set_video(videoEncoder, video);
 	obs_encoder_set_audio(audioEncoder, obs_get_audio());
 
-	output = obs_output_create("ffmpeg_mpegts_muxer", "dsr_vertical_output", nullptr, nullptr);
+	output =
+		obs_output_create(srt ? "ffmpeg_mpegts_muxer" : "rtmp_output", "dsr_vertical_output", nullptr, nullptr);
 	if (!output) {
 		obs_log(LOG_ERROR, "portrait output could not be created");
 		releaseOutput();
-		return;
+		return false;
 	}
 
 	obs_output_set_video_encoder(output, videoEncoder);
@@ -132,25 +193,37 @@ void VerticalCanvas::maybeStartOutput()
 	/* Mirrors the frontend's own defaults; reconnecting is what lets a
 	 * dropped uplink resume into the relay's protection window. */
 	obs_output_set_reconnect_settings(output, kReconnectRetries, kReconnectDelaySec);
+	signal_handler_connect(obs_output_get_signal_handler(output), "start", onOutputStarted, this);
 	signal_handler_connect(obs_output_get_signal_handler(output), "stop", onOutputStopped, this);
+
+	/* Set after releaseOutput above, which clears it: the teardown runs as
+	 * part of starting, so recording the kind any earlier loses it. */
+	directPublish = !srt;
 
 	if (!obs_output_start(output)) {
 		obs_log(LOG_WARNING, "portrait output failed to start: %s", obs_output_get_last_error(output));
 		releaseOutput();
-		return;
+		return false;
 	}
 
-	obs_log(LOG_INFO, "portrait output started (%s, %d kbps)", encoderId, DSR_TARGET_BITRATE_KBPS);
+	obs_log(LOG_INFO, "portrait output starting (%s, %d kbps)", encoderId, DSR_TARGET_BITRATE_KBPS);
+	return true;
 }
 
 void VerticalCanvas::stopOutput(bool force)
 {
 	if (!output)
 		return;
-	if (force)
+	if (force) {
 		obs_output_force_stop(output);
-	else if (obs_output_active(output))
+	} else if (obs_output_active(output)) {
 		obs_output_stop(output);
+	} else {
+		/* Not on air yet, so no stop signal is coming to unwind this.
+		 * Tear it down here rather than wait for one that never
+		 * arrives. */
+		releaseOutput();
+	}
 }
 
 void VerticalCanvas::releaseOutput()
@@ -159,6 +232,7 @@ void VerticalCanvas::releaseOutput()
 		obs_output_force_stop(output);
 
 	if (output) {
+		signal_handler_disconnect(obs_output_get_signal_handler(output), "start", onOutputStarted, this);
 		signal_handler_disconnect(obs_output_get_signal_handler(output), "stop", onOutputStopped, this);
 		obs_output_release(output);
 		output = nullptr;
@@ -175,4 +249,8 @@ void VerticalCanvas::releaseOutput()
 		obs_service_release(service);
 		service = nullptr;
 	}
+
+	directPublish = false;
+	setDirectPhase(DirectPhase::Idle);
+	emit publishingChanged(false);
 }

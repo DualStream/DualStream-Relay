@@ -134,10 +134,24 @@ QString dsrSharedStyleSheet()
 	background: rgba(128, 128, 128, 38);
 }
 #statusPill[state="live"]      { color: #F75B1E; background: rgba(247, 91, 30, 40); }
+#statusPill[state="onair"]     { color: #4ADE80; background: rgba(74, 222, 128, 38); }
 #statusPill[state="ready"]     { color: #33A9D1; background: rgba(8, 142, 188, 40); }
 #statusPill[state="protected"] { color: #33A9D1; background: rgba(8, 142, 188, 40); }
 #statusPill[state="warn"]      { color: #E8981C; background: rgba(245, 158, 11, 38); }
 #statusPill[state="error"]     { color: #F87171; background: rgba(239, 68, 68, 38); }
+
+/* Destructive action, wherever one is offered. */
+#endButton {
+	background: rgba(239, 68, 68, 26);
+	color: #F87171;
+	border: none;
+	border-radius: 8px;
+	padding: 7px 14px;
+	font-weight: 500;
+	font-size: 12px;
+}
+#endButton:hover   { background: rgba(239, 68, 68, 48); }
+#endButton:pressed { background: rgba(239, 68, 68, 66); }
 
 /* One rounded surface per topic in a settings dialog. */
 #settingsCard {

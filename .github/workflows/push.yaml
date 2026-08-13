@@ -95,9 +95,27 @@ jobs:
           if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
           shopt -s extglob
 
-          echo "### Checksums" > ${{ github.workspace }}/CHECKSUMS.txt
+          notes="${{ github.workspace }}/RELEASE_NOTES.md"
+
+          # What changed, taken from this version's own changelog section, so a
+          # published release describes itself rather than opening on hashes.
+          awk -v want="## ${{ steps.check.outputs.version }}" '
+            $0 == want { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > "${notes}"
+
+          if [[ ! -s "${notes}" ]]; then
+            echo "::warning::No CHANGELOG section for ${{ steps.check.outputs.version }}"
+            : > "${notes}"
+          fi
+
+          {
+            echo
+            echo "### Checksums"
+          } >> "${notes}"
           for file in ${{ github.workspace }}/@(*.exe|*.deb|*.ddeb|*.pkg|*.tar.xz|*.zip); do
-            echo "    ${file##*/}: $(sha256sum "${file}" | cut -d " " -f 1)" >> ${{ github.workspace }}/CHECKSUMS.txt
+            echo "    ${file##*/}: $(sha256sum "${file}" | cut -d " " -f 1)" >> "${notes}"
           done
 
       - name: Create Release
@@ -105,11 +123,11 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564
         with:
-          draft: true
+          draft: false
           prerelease: ${{ fromJSON(steps.check.outputs.prerelease) }}
           tag_name: ${{ steps.check.outputs.version }}
           name: ${{ needs.build-project.outputs.pluginName }} ${{ steps.check.outputs.version }}
-          body_path: ${{ github.workspace }}/CHECKSUMS.txt
+          body_path: ${{ github.workspace }}/RELEASE_NOTES.md
           files: |
             ${{ github.workspace }}/*.exe
             ${{ github.workspace }}/*.zip

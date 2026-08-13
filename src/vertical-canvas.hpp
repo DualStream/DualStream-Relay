@@ -36,10 +36,14 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * sources with their own transforms and visibility, and an SRT output that
  * follows OBS's own stream start and stop.
  *
- * Two rules carry over from the relay dock. There is still exactly one Start
- * Streaming button and it is OBS's; the portrait output only ever starts in
- * response to it. And a portrait failure must never take the landscape stream
- * down; the output here shares nothing with the one OBS owns. */
+ * A portrait failure must never take the landscape stream down; the output
+ * here shares nothing with the one OBS owns.
+ *
+ * The publish has two paths. Through the relay it is slaved to OBS: it starts
+ * and stops with OBS's own Start Streaming and never adds a second control for
+ * it. Straight to an RTMP server it cannot be, because OBS's Start Streaming
+ * always carries the main canvas, so that path is driven from this class and
+ * the dock offers the only control that can put a portrait program on air. */
 class VerticalCanvas : public QObject {
 	Q_OBJECT
 
@@ -64,6 +68,33 @@ public:
 	 * destination takes the portrait canvas. Both gate the output. */
 	void setPortraitTarget(const QString &server, const QString &key);
 	void setHasPortraitDestinations(bool has);
+
+	/* Where a direct publish is in its life. Connecting and disconnecting
+	 * both take a moment on RTMP, and a control that says nothing during
+	 * either reads as one that did nothing. */
+	enum class DirectPhase { Idle, Starting, Live, Stopping };
+	DirectPhase directPhase() const { return directPhaseValue; }
+
+	/* Publish the portrait program straight to an RTMP server. Driven by
+	 * its own control because OBS's Start Streaming always carries the main
+	 * canvas, so nothing it does can put this one on air. */
+	bool startDirect(const QString &server, const QString &key);
+	void stopDirect();
+
+	/* True while the portrait program is going straight to an RTMP server
+	 * rather than through the relay. The two are told apart because only the
+	 * direct one has a control of its own to show. */
+	bool publishingDirect() const { return publishing() && directPublish; }
+
+	/* Whether this account may publish straight to an RTMP server. Pushed by
+	 * the relay dock, which is what knows the subscription state, so a
+	 * destination left over from a lapsed period stops offering its own
+	 * control once the relay is carrying the portrait program. */
+	void setDirectAllowed(bool allowed);
+	bool directAllowed() const { return directAllowedFlag; }
+
+	/* The locally held destination was saved or removed. */
+	void notifyDirectChanged();
 
 	void handleFrontendEvent(enum obs_frontend_event event);
 
@@ -93,6 +124,10 @@ signals:
 	 * anything polling for it. */
 	void itemVisibilityChanged(qint64 itemId, bool visible);
 	void itemLockChanged(qint64 itemId, bool locked);
+	/* The portrait publish came up or went down, by either path. */
+	void publishingChanged(bool active);
+	/* A direct publish moved between idle, starting, live and stopping. */
+	void directPhaseChanged();
 
 private:
 	void adopt();
@@ -107,6 +142,8 @@ private:
 
 	/* Implemented in vertical-output.cpp. */
 	void maybeStartOutput();
+	bool startOutput(const QString &server, const QString &key, bool srt);
+	void setDirectPhase(DirectPhase phase);
 	void stopOutput(bool force);
 	void releaseOutput();
 
@@ -130,6 +167,7 @@ private:
 	static void onItemVisible(void *data, calldata_t *cd);
 	static void onItemLocked(void *data, calldata_t *cd);
 	static void onSceneReordered(void *data, calldata_t *cd);
+	static void onOutputStarted(void *data, calldata_t *cd);
 	static void onOutputStopped(void *data, calldata_t *cd);
 	static void onChannelChange(void *data, calldata_t *cd);
 	static void onMainTransitionStart(void *data, calldata_t *cd);
@@ -157,5 +195,8 @@ private:
 	obs_encoder_t *audioEncoder = nullptr;
 	obs_service_t *service = nullptr;
 	bool frontendReady = false;
+	bool directPublish = false;
+	DirectPhase directPhaseValue = DirectPhase::Idle;
+	bool directAllowedFlag = false;
 	int64_t selectedItem = -1;
 };

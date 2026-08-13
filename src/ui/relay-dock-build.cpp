@@ -156,6 +156,8 @@ RelayDock::RelayDock(QWidget *parent) : QWidget(parent)
 	listPageLayout->addWidget(scroll, 1);
 	stack->addWidget(listPage);
 
+	buildDirectPage();
+
 	root->addWidget(stack, 1);
 
 	summaryLabel = new QLabel;

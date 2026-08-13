@@ -33,7 +33,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "../relay-status.hpp"
 #include "dsr-widgets.hpp"
 
+class QComboBox;
 class QLabel;
+class QLineEdit;
 class QPushButton;
 class QScrollArea;
 class QStackedWidget;
@@ -101,6 +103,17 @@ private:
 	QString environmentSignature() const;
 	QString blockingSetupIssue() const;
 	void openEditDialog(const QString &destinationId);
+
+	/* Implemented in relay-dock-direct.cpp. */
+	void buildDirectPage();
+	void buildDirectSummary(QVBoxLayout *parent);
+	void buildDirectForm(QVBoxLayout *parent);
+	void fillDirectForm();
+	void refreshDirectPage();
+	void saveDirectDestination();
+	void removeDirectDestination();
+	void applyDirectDestination();
+	void showDirectStatus(const QString &text, bool ok);
 	QWidget *makeRow(const DsrDestination &dest, const DsrDestStatus *live);
 	DsrSwitch *makeDestToggle(const DsrDestination &dest);
 	void requestToggle(const DsrDestination &dest, bool wanted);
@@ -136,6 +149,25 @@ private:
 	QLabel *urlLabel;
 	QPushButton *primaryButton;
 	QWidget *listPage;
+	QWidget *directPage = nullptr;
+	QLineEdit *directServerEdit = nullptr;
+	QLineEdit *directKeyEdit = nullptr;
+	QComboBox *directCanvasCombo = nullptr;
+	QLabel *directIntro = nullptr;
+	QLabel *directHint = nullptr;
+	QLabel *directStatus = nullptr;
+	QWidget *directSummary = nullptr;
+	QLabel *directSummaryName = nullptr;
+	QLabel *directSummaryNote = nullptr;
+	QLabel *directSummaryCanvas = nullptr;
+	QWidget *directForm = nullptr;
+	QPushButton *directSaveButton = nullptr;
+	QPushButton *directCancelButton = nullptr;
+	QPushButton *directRemoveButton = nullptr;
+	/* The form is shown while adding or changing, the summary once there is
+	 * something to show. */
+	bool directEditing = false;
+	bool directFormFilled = false;
 	QScrollArea *scroll;
 	QWidget *listContainer;
 	QVBoxLayout *listLayout;

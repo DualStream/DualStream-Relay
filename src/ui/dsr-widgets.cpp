@@ -144,6 +144,21 @@ void DsrIconButton::paintEvent(QPaintEvent *)
 		return;
 	}
 
+	if (glyph == Glyph::Pencil) {
+		/* Body and tip as one silhouette, which stays legible at this size
+		 * where an outlined pencil turns to mush. */
+		QPainterPath pencil;
+		pencil.moveTo(center.x() - 5.5, center.y() + 5.5);
+		pencil.lineTo(center.x() - 4.2, center.y() + 1.4);
+		pencil.lineTo(center.x() + 2.4, center.y() - 5.2);
+		pencil.lineTo(center.x() + 5.2, center.y() - 2.4);
+		pencil.lineTo(center.x() - 1.4, center.y() + 4.2);
+		pencil.closeSubpath();
+		painter.setBrush(tint(fg, hovered ? 230 : 170));
+		painter.drawPath(pencil);
+		return;
+	}
+
 	/* Settings: two sliders, each a track with a knob at a different stop.
 	 * Reads as "settings" at 26px far better than a toothed gear. */
 	QPen pen(tint(fg, hovered ? 220 : 150));

@@ -82,18 +82,6 @@ QString dsrRelayStyleSheet()
 #secondaryButton:hover   { background: rgba(255, 255, 255, 30); }
 #secondaryButton:pressed { background: rgba(255, 255, 255, 42); }
 
-#endButton {
-	background: rgba(239, 68, 68, 26);
-	color: #F87171;
-	border: none;
-	border-radius: 8px;
-	padding: 7px 14px;
-	font-weight: 500;
-	font-size: 12px;
-}
-#endButton:hover   { background: rgba(239, 68, 68, 48); }
-#endButton:pressed { background: rgba(239, 68, 68, 66); }
-
 #codeLabel { letter-spacing: 3px; font-weight: 700; }
 
 QScrollArea { background: transparent; }

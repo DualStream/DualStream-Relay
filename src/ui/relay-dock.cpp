@@ -103,6 +103,9 @@ void RelayDock::refreshUi()
 			}
 		}
 		VerticalCanvas::instance()->setHasPortraitDestinations(portrait);
+		/* Publishing straight to an RTMP server is what an account
+		 * without a subscription gets instead of the relay. */
+		VerticalCanvas::instance()->setDirectAllowed(state == State::Lapsed);
 	}
 
 	if (state == State::Protected && current != State::Protected && !status->protectedSince().isValid())
@@ -167,7 +170,11 @@ void RelayDock::refreshUi()
 	/* content */
 	const bool listState = state == State::Ready || state == State::Live || state == State::Protected ||
 			       state == State::Offline;
-	if (listState) {
+	if (state == State::Lapsed) {
+		/* Not a dead end: one destination can still be set up here. */
+		stack->setCurrentWidget(directPage);
+		refreshDirectPage();
+	} else if (listState) {
 		stack->setCurrentWidget(listPage);
 		rebuildRows();
 		/* Offline shows the last known rows, visibly inert. */
@@ -196,10 +203,6 @@ void RelayDock::refreshUi()
 			urlLabel->setText(auth->pairingUrl());
 			urlLabel->setVisible(true);
 			primaryButton->setText(dsrText("Button.Cancel"));
-			break;
-		case State::Lapsed:
-			messageLabel->setText(dsrText("Lapsed.Body"));
-			primaryButton->setText(dsrText("Action.OpenBilling"));
 			break;
 		case State::Unconfigured:
 			messageLabel->setText(dsrText("Unconfigured.Body"));

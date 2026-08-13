@@ -38,7 +38,7 @@
     },
     "name": "obs-dualstream-relay",
     "displayName": "DualStream Relay for OBS",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "author": "Dual Stream Studio Inc",
     "website": "https://dualstream.gg",
     "email": "hello@dualstream.gg"

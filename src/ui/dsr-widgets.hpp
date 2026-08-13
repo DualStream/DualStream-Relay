@@ -60,6 +60,7 @@ public:
 		Kebab,    /* three dots, the per-row overflow menu */
 		Settings, /* sliders, the dock header action */
 		Plus,     /* add, the destination list footer action */
+		Pencil,   /* edit, on a row that is showing rather than editing */
 	};
 
 	explicit DsrIconButton(Glyph glyph, QWidget *parent = nullptr);

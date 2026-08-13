@@ -1,61 +1,77 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.2.0
 
-Initial release. Windows only: the macOS and Linux build targets are
-configured but are not yet producing working builds.
+### Try it without a subscription
+
+- You can now set up one streaming destination without an active
+  subscription. Enter a server address and a stream key from any platform,
+  and choose whether it carries your normal scenes or your vertical ones.
+- Vertical streams start from a **Go live** button in the DualStream Vertical
+  panel. OBS's own Start Streaming button always sends your normal scenes, so
+  it cannot carry a vertical one. The panel tells you which button to press.
+- That button now says what is happening while it works: starting, live, and
+  ending each look different, and it cannot be pressed twice by mistake.
+- Once saved, the destination tidies itself into a single line showing where
+  it sends and which scenes it carries, with a pencil to change it. Your
+  stream key is never shown back to you.
+- Everything about that destination stays on your computer, encrypted.
+
+### Fixed
+
+- A vertical stream could be running with the button still offering to start
+  it, leaving no obvious way to stop.
+- Stopping a vertical stream while it was still connecting could leave it
+  stuck.
+- Adding a destination without an active subscription said "Something went
+  wrong" instead of explaining that the subscription was inactive.
+
+## 0.1.0
+
+First release. Windows only.
 
 ### Streaming
 
-- Dock with sign-in via browser pairing, destination management, live
-  per-destination status, disconnect protection countdown, and diagnostics.
-- One-click routing of the OBS stream output to the relay, with a snapshot
-  of the previous service and a restore action.
-- Clean session end on Stop Streaming and on OBS exit, so platforms end
-  immediately instead of holding on the standby screen.
-- End-stream hotkey.
-- Turning a destination on or off mid-stream asks first, then shows the row
-  as applying until the relay confirms it. Off-air the switch stays
-  immediate.
+- A panel in OBS that signs you in through your browser, manages where your
+  stream goes, and shows each platform's status while you are live.
+- One upload reaches every platform you turn on, so adding platforms does not
+  cost you extra upload speed.
+- If your connection drops, your platforms stay live on your standby screen
+  and the panel counts down how long you have to reconnect.
+- Pressing Stop Streaming ends every platform straight away rather than
+  leaving them on the standby screen, and the same happens if you quit OBS.
+- Turning a platform on or off mid-stream asks first, then shows the row as
+  applying until it takes effect. You do not have to stop streaming.
+- A keyboard shortcut to end the stream everywhere.
 
-### Vertical canvas
+### Vertical scenes
 
-- A 9:16 counterpart of every scene, sharing your sources with its own
-  layout and visibility, published as a second SRT ingest for portrait
-  destinations.
-- Scene switches transition on the vertical canvas with a copy of the
-  transition OBS ran, started at the same moment, including per-scene
-  transition overrides.
-- Preview editing matches OBS: the same handles, crop on alt-drag, spacing
-  helpers, out-of-bounds shading, and a right-click menu carrying add
-  source, transform, order, filters and properties.
-- Sources list in its own dock, so it can sit beside the OBS sources panel.
-- Turned on and off from the relay dock's settings, not from closing the
-  dock, since turning it off discards the vertical layouts.
+- Every scene gets a matching 9:16 version for TikTok, Reels and Shorts. It
+  shares the same cameras and sources as your normal scenes, but you arrange
+  them separately and choose which ones appear.
+- Switching scenes uses the same transition on both, at the same moment,
+  including any per-scene transition you have set.
+- Arranging sources works the way it does in OBS: the same drag handles,
+  alt-drag to crop, spacing guides, out-of-bounds shading, and a right-click
+  menu for adding sources, transforms and ordering.
+- The vertical sources list is its own panel, so it can sit beside the OBS
+  one instead of being squeezed underneath.
 
 ### Destinations
 
-- Connected accounts already in use are listed with an Added badge rather
-  than hidden, so the section no longer looks empty once every account has
-  been added.
-- A link to manage connected accounts, which cannot be done from OBS.
-- TikTok, Facebook Live and Facebook Reels prefill their ingest server and
-  orientation, leaving only the stream key to enter.
-- Custom RTMP server and stream key are cached locally so the edit dialog
-  can show what a destination is set to, with a reveal toggle on the key.
+- Accounts you have already added are shown rather than hidden, so the list
+  no longer looks empty once you have added everything.
+- A button to manage your connected accounts, which has to be done on the
+  web.
+- TikTok, Facebook Live and Facebook Reels fill in their server address and
+  orientation for you, leaving only the stream key to paste.
+- Your own server addresses and stream keys are remembered so the edit screen
+  can show what a destination is set to, with a button to reveal the key.
 
-### Security
+### Privacy and security
 
-- Sign-in tokens are encrypted at rest with the operating system's own
-  facility, tied to the signed-in user account. Existing plain-text token
-  files are migrated on first read. No plain-text fallback is written on
-  platforms without a secret store.
-- HTTP redirects are refused rather than followed. The bearer token travels
-  as a custom header, which curl repeats to a redirect target whatever host
-  or scheme it names, so the token now only ever reaches the configured
-  host.
-- The HTTP client is restricted to https and http, out of curl's much wider
-  default protocol set.
-- Certificate and hostname verification are set explicitly rather than left
-  to library defaults.
-- Destination identifiers are percent-encoded before going into URL paths.
+- Your sign-in is encrypted on your computer using Windows' own protection,
+  tied to your Windows account. Anything saved by an older version is
+  upgraded the first time it is read.
+- Sign-in details are sent only to DualStream, over a verified connection
+  that refuses redirects, so they cannot be forwarded anywhere else.
