@@ -1,4 +1,5 @@
 # DualStream Relay for OBS
+[![Push](https://github.com/DualStream/DualStream_OBS_Plugin/actions/workflows/push.yaml/badge.svg)](https://github.com/DualStream/DualStream_OBS_Plugin/actions/workflows/push.yaml)
 
 Go live on Twitch, YouTube, Kick and more at the same time, without your
 computer having to upload a separate stream to each one.
