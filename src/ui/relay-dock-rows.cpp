@@ -35,48 +35,24 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <obs-module.h>
 
+#include "../relay-secrets.hpp"
+#include "dsr-platform-mark.hpp"
 #include "dsr-ui-common.hpp"
 #include "dsr-widgets.hpp"
 #include "relay-dock-text.hpp"
 
 namespace {
 
-QString platformName(const QString &platform)
-{
-	if (platform == QLatin1String("twitch"))
-		return QStringLiteral("Twitch");
-	if (platform == QLatin1String("youtube"))
-		return QStringLiteral("YouTube");
-	if (platform == QLatin1String("kick"))
-		return QStringLiteral("Kick");
-	if (platform == QLatin1String("tiktok"))
-		return QStringLiteral("TikTok");
-	if (platform == QLatin1String("facebook"))
-		return QStringLiteral("Facebook");
-	if (platform == QLatin1String("facebook_reels"))
-		return QStringLiteral("Facebook Reels");
-	return QString();
-}
-
-/* What the row says beside the logo. The server labels connected accounts
- * "<platform> - <username>", which next to the platform's own logo says the
- * platform twice, so the prefix is dropped and the account name stands alone.
- * A label the user typed is left exactly as they typed it. */
+/* What the row says beside the logo: the account name on its own, or the
+ * platform when there is no label to show. A label the user typed is left
+ * exactly as they typed it. */
 QString platformDisplay(const DsrDestination &dest)
 {
-	QString label = dest.label;
-	if (!label.isEmpty()) {
-		/* The separator is built from its code point rather than typed:
-		 * a middle dot in a source file is a non-ASCII character, and
-		 * the repository is ASCII only. */
-		const QString prefix = dest.platform + QStringLiteral(" ") + QChar(0x00B7) + QStringLiteral(" ");
-		if (label.startsWith(prefix, Qt::CaseInsensitive))
-			label = label.mid(prefix.size()).trimmed();
-		if (!label.isEmpty())
-			return label;
-	}
+	const QString label = dsrStripPlatformPrefix(dest.label, dest.platform);
+	if (!label.isEmpty())
+		return label;
 
-	const QString name = platformName(dest.platform);
+	const QString name = dsrPlatformName(dest.platform);
 	if (!name.isEmpty())
 		return name;
 	if (!dest.customPlatform.isEmpty())
@@ -86,118 +62,12 @@ QString platformDisplay(const DsrDestination &dest)
 
 /* Which platform a row represents, for artwork and colors. A custom RTMP
  * destination can name a platform we have a logo for, so it is consulted
- * too. Returns an empty string when there is nothing recognizable. */
+ * too. */
 QString platformKey(const DsrDestination &dest)
 {
-	const QString source = dest.type == QLatin1String("custom") && !dest.customPlatform.isEmpty()
-				       ? dest.customPlatform
-				       : dest.platform;
-	if (source == QLatin1String("twitch") || source == QLatin1String("youtube") ||
-	    source == QLatin1String("kick") || source == QLatin1String("tiktok"))
-		return source;
-	if (source == QLatin1String("facebook") || source == QLatin1String("facebook_reels"))
-		return QStringLiteral("facebook");
-	return QString();
-}
-
-/* Each platform's own mark colors. The logo art is a white silhouette, so the
- * foreground is recolored per brand rather than assumed: Kick and TikTok
- * publish theirs as dark-on-bright and white-on-black respectively, and
- * white on Kick's green would be illegible. */
-struct PlatformMarkStyle {
-	QColor background;
-	QColor foreground;
-};
-
-PlatformMarkStyle platformMarkStyle(const QString &key)
-{
-	if (key == QLatin1String("twitch"))
-		return {QColor(0x91, 0x46, 0xFF), QColor(0xFF, 0xFF, 0xFF)};
-	if (key == QLatin1String("youtube"))
-		return {QColor(0xFF, 0x00, 0x00), QColor(0xFF, 0xFF, 0xFF)};
-	if (key == QLatin1String("kick"))
-		return {QColor(0x53, 0xFC, 0x18), QColor(0x0B, 0x0B, 0x0B)};
-	if (key == QLatin1String("facebook"))
-		return {QColor(0x18, 0x77, 0xF2), QColor(0xFF, 0xFF, 0xFF)};
-	if (key == QLatin1String("tiktok"))
-		return {QColor(0x01, 0x01, 0x01), QColor(0xFF, 0xFF, 0xFF)};
-	return {QColor(0x80, 0x80, 0x80), QColor(0xFF, 0xFF, 0xFF)};
-}
-
-/* Rounded brand square with the platform's logo centered on it, rendered at
- * the display's pixel ratio. Cached: rows rebuild on every poll, and decoding
- * and recoloring a PNG per row per second would be waste for artwork that
- * never changes. Falls back to a neutral mark when a destination has no logo,
- * which is the custom RTMP case. */
-QPixmap platformMarkPixmap(const QString &key, int side, qreal ratio)
-{
-	static QHash<QString, QPixmap> cache;
-	const QString cacheKey = QStringLiteral("%1|%2|%3").arg(key).arg(side).arg(ratio);
-	const auto hit = cache.constFind(cacheKey);
-	if (hit != cache.constEnd())
-		return *hit;
-
-	const PlatformMarkStyle style = platformMarkStyle(key);
-	const int pixels = qRound(side * ratio);
-
-	QPixmap mark(pixels, pixels);
-	mark.setDevicePixelRatio(ratio);
-	mark.fill(Qt::transparent);
-
-	QPainter painter(&mark);
-	painter.setRenderHint(QPainter::Antialiasing, true);
-	painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-	painter.setPen(Qt::NoPen);
-	painter.setBrush(style.background);
-	painter.drawRoundedRect(QRectF(0, 0, side, side), 7, 7);
-
-	QImage logo;
-	if (!key.isEmpty()) {
-		char *path = obs_module_file(QStringLiteral("images/platform/%1.png").arg(key).toUtf8().constData());
-		if (path) {
-			logo.load(QString::fromUtf8(path));
-			bfree(path);
-		}
-	}
-
-	if (!logo.isNull()) {
-		/* The art is white with alpha; SourceIn keeps the shape and
-		 * replaces the color, so one asset serves every brand. */
-		const int glyph = qRound(side * 0.62);
-		QImage scaled = logo.scaled(qRound(glyph * ratio), qRound(glyph * ratio), Qt::KeepAspectRatio,
-					    Qt::SmoothTransformation)
-					.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-		QPainter recolor(&scaled);
-		recolor.setCompositionMode(QPainter::CompositionMode_SourceIn);
-		recolor.fillRect(scaled.rect(), style.foreground);
-		recolor.end();
-		scaled.setDevicePixelRatio(ratio);
-
-		const qreal w = scaled.width() / ratio;
-		const qreal h = scaled.height() / ratio;
-		painter.drawImage(QPointF((side - w) / 2.0, (side - h) / 2.0), scaled);
-	} else {
-		/* Custom RTMP: a small broadcast glyph rather than an invented
-		 * logo or a pair of initials. */
-		QPen pen(style.foreground);
-		pen.setWidthF(1.6);
-		pen.setCapStyle(Qt::RoundCap);
-		painter.setPen(pen);
-		painter.setBrush(Qt::NoBrush);
-		const QPointF center(side / 2.0, side / 2.0);
-		for (int i = 1; i <= 2; i++) {
-			const qreal r = i * 4.0;
-			painter.drawArc(QRectF(center.x() - r, center.y() - r, r * 2, r * 2), 30 * 16, 120 * 16);
-			painter.drawArc(QRectF(center.x() - r, center.y() - r, r * 2, r * 2), 210 * 16, 120 * 16);
-		}
-		painter.setPen(Qt::NoPen);
-		painter.setBrush(style.foreground);
-		painter.drawEllipse(center, 1.9, 1.9);
-	}
-	painter.end();
-
-	cache.insert(cacheKey, mark);
-	return mark;
+	return dsrPlatformKey(dest.type == QLatin1String("custom") && !dest.customPlatform.isEmpty()
+				      ? dest.customPlatform
+				      : dest.platform);
 }
 
 } // namespace
@@ -338,7 +208,7 @@ QWidget *RelayDock::makeRow(const DsrDestination &dest, const DsrDestStatus *liv
 	lineLayout->setSpacing(9);
 
 	QLabel *mark = new QLabel;
-	mark->setPixmap(platformMarkPixmap(platformKey(dest), 28, devicePixelRatioF()));
+	mark->setPixmap(dsrPlatformMark(platformKey(dest), 28, devicePixelRatioF()));
 	mark->setFixedSize(28, 28);
 	lineLayout->addWidget(mark);
 
@@ -397,8 +267,11 @@ QWidget *RelayDock::makeRow(const DsrDestination &dest, const DsrDestStatus *liv
 	menu->addAction(dsrText("Destinations.Remove"), this, [this, id]() {
 		const QMessageBox::StandardButton answer = QMessageBox::question(
 			this, dsrText("Destinations.RemoveTitle"), dsrText("Destinations.RemoveConfirm"));
-		if (answer == QMessageBox::Yes)
-			destinations->remove(id, nullptr);
+		if (answer != QMessageBox::Yes)
+			return;
+		/* The destination is going, so the key kept for it goes too. */
+		dsrSecretForget(id);
+		destinations->remove(id, nullptr);
 	});
 
 	menuButton->setMenu(menu);

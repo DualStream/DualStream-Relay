@@ -118,6 +118,49 @@ QString dsrSharedStyleSheet()
 #mutedText { color: palette(text); font-size: 12px; }
 #bodyText { font-size: 13px; }
 
+/* Secondary text: a fixed grey rather than a palette color, because it has to
+ * stay quieter than body text on light and dark OBS themes alike. */
+#settingsNote { color: #8A8A8A; font-size: 11px; }
+#settingsValue { font-size: 12px; }
+#monoValue { font-family: monospace; font-size: 11px; color: #8A8A8A; }
+
+/* State of the thing named beside it: the dock's header, a routing state. */
+#statusPill {
+	border-radius: 11px;
+	padding: 3px 12px;
+	font-weight: 600;
+	font-size: 12px;
+	color: palette(text);
+	background: rgba(128, 128, 128, 38);
+}
+#statusPill[state="live"]      { color: #F75B1E; background: rgba(247, 91, 30, 40); }
+#statusPill[state="ready"]     { color: #33A9D1; background: rgba(8, 142, 188, 40); }
+#statusPill[state="protected"] { color: #33A9D1; background: rgba(8, 142, 188, 40); }
+#statusPill[state="warn"]      { color: #E8981C; background: rgba(245, 158, 11, 38); }
+#statusPill[state="error"]     { color: #F87171; background: rgba(239, 68, 68, 38); }
+
+/* One rounded surface per topic in a settings dialog. */
+#settingsCard {
+	border-radius: 10px;
+	background: rgba(255, 255, 255, 10);
+}
+
+/* One row shape for anything that names a platform: the destination rows in
+ * the dock and the connected-account rows in the add dialog. */
+#destRow, #accountRow {
+	border-radius: 10px;
+	background: rgba(255, 255, 255, 10);
+}
+#accountRow[added="true"] { background: rgba(255, 255, 255, 6); }
+#destName { font-weight: 500; }
+#canvasBadge {
+	color: palette(text);
+	font-size: 11px;
+	padding: 1px 7px;
+	border-radius: 8px;
+	background: rgba(128, 128, 128, 40);
+}
+
 #primaryButton {
 	background-color: #F3490E;
 	color: #FFFFFF;

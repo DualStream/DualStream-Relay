@@ -26,6 +26,9 @@ Using the relay requires a DualStream account. Learn more at
   seconds even mid-stream.
 - Live status per destination, including the relay's own error message when
   a platform rejects the stream.
+- A vertical canvas: a 9:16 counterpart of every scene, sharing your sources
+  with its own layout and visibility, published alongside the landscape
+  stream for portrait destinations.
 - Sign-in happens in your browser. The plugin never sees your password.
 
 ## Requirements
@@ -39,6 +42,25 @@ Download the installer or archive for your platform from the releases page
 and follow the standard OBS plugin installation steps. After restarting OBS,
 the dock opens once automatically; it is also available under Docks and
 under Tools in the menu.
+
+## What the plugin stores on your machine
+
+Everything lives in the plugin's own OBS configuration directory, readable
+only by your user account.
+
+- **Sign-in tokens.** Written on sign-in, cleared on sign-out. On Windows
+  they are encrypted with DPAPI, which ties them to your Windows account.
+  macOS and Linux have no secret store wired up yet, so on those platforms
+  the tokens are stored as plain text.
+- **Custom RTMP server and stream key.** Kept only so the edit dialog can
+  show what a destination is set to; the relay is the authority. Same
+  encryption, and on a platform without a secret store nothing is written at
+  all and the fields simply come up blank. Removed with the destination, and
+  cleared entirely on sign-out.
+
+Nothing else is stored, and nothing is sent anywhere except the DualStream
+API. Sign-in tokens travel over HTTPS with certificate verification on and
+redirects refused, so they only ever reach the host you configured.
 
 ## Building
 
@@ -71,6 +93,12 @@ Built on [OBS Studio](https://obsproject.com) and started from the
 [OBS plugin template](https://github.com/obsproject/obs-plugintemplate).
 Thanks to the OBS Project and its contributors for the platform and the
 tooling that make plugins like this one possible.
+
+Two files are copied verbatim from OBS Studio so the vertical canvas draws
+its out-of-bounds hatch and spacing guides exactly as the main preview does:
+`data/images/overflow.png` and `data/effects/striped-line.effect`. They are
+Copyright (C) OBS Studio contributors, GPL-2.0-or-later, and are used here
+under the same license as the rest of this project.
 
 ## Trademarks
 

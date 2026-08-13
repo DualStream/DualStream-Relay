@@ -40,11 +40,42 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <algorithm>
 
+#include "../relay-secrets.hpp"
+#include "dsr-platform-mark.hpp"
 #include "dsr-ui-common.hpp"
+
+namespace {
+
+/* Published ingest endpoints for the platforms that hand out a stream key
+ * rather than an OAuth connection. Same values the DualStream desktop app
+ * uses, so a destination set up in either place points at the same host. The
+ * field stays editable: these are stable but not guaranteed, and a user given
+ * a different one by the platform has to be able to use it. */
+QString presetServer(const QString &preset)
+{
+	if (preset == QLatin1String("tiktok"))
+		return QStringLiteral("rtmp://push.live.tiktok.com/live/");
+	if (preset == QLatin1String("facebook") || preset == QLatin1String("facebook_reels"))
+		return QStringLiteral("rtmps://live-api-s.facebook.com:443/rtmp/");
+	return QString();
+}
+
+/* The orientation each preset actually delivers. */
+QString presetCanvas(const QString &preset)
+{
+	if (preset == QLatin1String("tiktok") || preset == QLatin1String("facebook_reels"))
+		return QStringLiteral("portrait");
+	return QStringLiteral("landscape");
+}
+
+} // namespace
 
 void DestinationDialog::buildAddUi()
 {
 	setMinimumWidth(420);
+	/* The dialog carries the shared rules itself rather than relying on
+	 * inheriting them from whichever dock opened it. */
+	setStyleSheet(dsrSharedStyleSheet());
 	QVBoxLayout *layout = new QVBoxLayout(this);
 
 	QHBoxLayout *accountsHeader = new QHBoxLayout;
@@ -100,14 +131,7 @@ void DestinationDialog::buildAddUi()
 	layout->addLayout(form);
 	layout->addWidget(canvasNote);
 
-	connect(presetCombo, &QComboBox::currentIndexChanged, this, [this]() {
-		const QString preset = presetCombo->currentData().toString();
-		const QString suggested = (preset == QLatin1String("tiktok") ||
-					   preset == QLatin1String("facebook_reels"))
-						  ? QStringLiteral("portrait")
-						  : canvasCombo->currentData().toString();
-		fillCanvasCombo(canvasCombo, QString(), suggested, canvasNote);
-	});
+	connect(presetCombo, &QComboBox::currentIndexChanged, this, &DestinationDialog::applyPreset);
 
 	customAddButton = new QPushButton(dsrText("Destinations.Add"));
 	customAddButton->setObjectName(QStringLiteral("primaryButton"));
@@ -134,34 +158,60 @@ void DestinationDialog::buildAddUi()
 	layout->addWidget(buttons);
 }
 
-/* An account already in use: named, marked, and left alone. The relay takes one
- * destination per connected account, so there is nothing to act on here, but
- * leaving it out is what made the section look empty to somebody who had
- * connected everything. */
-QWidget *DestinationDialog::makeAddedRow(const DsrSuggestion &suggestion)
+/* Fill in what the chosen preset already determines: its ingest host, its
+ * orientation, and the name it will appear under. Only the stream key is left,
+ * because only the user's account can supply it. Anything typed over a filled
+ * field is kept; the fields are prefilled, not owned. */
+void DestinationDialog::applyPreset()
 {
-	QWidget *row = new QWidget(this);
-	QHBoxLayout *rowLayout = new QHBoxLayout(row);
-	rowLayout->setContentsMargins(0, 2, 0, 2);
+	const QString preset = presetCombo->currentData().toString();
+	const QString server = presetServer(preset);
 
-	QLabel *name = new QLabel(suggestionName(suggestion));
-	name->setObjectName(QStringLiteral("mutedText"));
-	rowLayout->addWidget(name, 1);
+	/* Replaced only while it still holds a value this put there, so a
+	 * server the user pasted survives a change of mind about the preset. */
+	if (serverEdit->text().trimmed().isEmpty() || serverEdit->text() == filledServer)
+		serverEdit->setText(server);
+	filledServer = server;
 
-	QLabel *added = new QLabel(dsrText("Destinations.Added"));
-	added->setObjectName(QStringLiteral("canvasBadge"));
-	rowLayout->addWidget(added);
+	/* A placeholder rather than text: an empty label already renders as the
+	 * platform name, and prefilling it would make every destination on the
+	 * platform arrive with the same one. */
+	labelEdit->setPlaceholderText(dsrPlatformName(preset));
 
-	return row;
+	fillCanvasCombo(canvasCombo, QString(),
+			preset.isEmpty() ? canvasCombo->currentData().toString() : presetCanvas(preset), canvasNote);
 }
 
-QWidget *DestinationDialog::makeSuggestionRow(const DsrSuggestion &suggestion)
+/* Same shape as a destination row in the dock: brand mark, account name, then
+ * what you can do with it. An account already in use keeps its place with an
+ * Added badge instead of controls, since leaving those out is what made the
+ * section look empty to somebody who had connected everything. */
+QWidget *DestinationDialog::makeAccountRow(const DsrSuggestion &suggestion)
 {
-	QWidget *row = new QWidget(this);
-	QHBoxLayout *rowLayout = new QHBoxLayout(row);
-	rowLayout->setContentsMargins(0, 2, 0, 2);
+	const bool added = suggestion.alreadyAdded;
 
-	rowLayout->addWidget(new QLabel(suggestionName(suggestion)), 1);
+	QWidget *row = new QWidget(this);
+	row->setObjectName(QStringLiteral("accountRow"));
+	row->setProperty("added", added);
+	QHBoxLayout *rowLayout = new QHBoxLayout(row);
+	rowLayout->setContentsMargins(10, 6, 8, 6);
+	rowLayout->setSpacing(9);
+
+	QLabel *mark = new QLabel;
+	mark->setPixmap(dsrPlatformMark(dsrPlatformKey(suggestion.platform), 28, devicePixelRatioF()));
+	mark->setFixedSize(28, 28);
+	rowLayout->addWidget(mark);
+
+	QLabel *name = new QLabel(suggestionName(suggestion));
+	name->setObjectName(added ? QStringLiteral("mutedText") : QStringLiteral("destName"));
+	rowLayout->addWidget(name, 1);
+
+	if (added) {
+		QLabel *badge = new QLabel(dsrText("Destinations.Added"));
+		badge->setObjectName(QStringLiteral("canvasBadge"));
+		rowLayout->addWidget(badge);
+		return row;
+	}
 
 	QComboBox *canvas = new QComboBox;
 	fillCanvasCombo(canvas, suggestion.platform,
@@ -170,7 +220,11 @@ QWidget *DestinationDialog::makeSuggestionRow(const DsrSuggestion &suggestion)
 			nullptr);
 	rowLayout->addWidget(canvas);
 
+	/* Secondary here, primary on the custom form: with a row per account the
+	 * accent would stop meaning anything if every one of them wore it. */
 	QPushButton *add = new QPushButton(dsrText("Destinations.Add"));
+	add->setObjectName(QStringLiteral("secondaryButton"));
+	add->setCursor(Qt::PointingHandCursor);
 	rowLayout->addWidget(add);
 
 	QPointer<DestinationDialog> self(this);
@@ -193,7 +247,7 @@ QWidget *DestinationDialog::makeSuggestionRow(const DsrSuggestion &suggestion)
 		body.insert(QStringLiteral("terms_ack"), true);
 
 		QPointer<QPushButton> addGuard(add);
-		self->destinations->create(body, [self, addGuard](bool ok, QString errorKey) {
+		self->destinations->create(body, [self, addGuard](bool ok, QString errorKey, QString) {
 			if (!self)
 				return;
 			if (ok) {
@@ -210,11 +264,17 @@ QWidget *DestinationDialog::makeSuggestionRow(const DsrSuggestion &suggestion)
 	return row;
 }
 
+/* The account name on its own. The logo already says which platform it is, so
+ * the "<platform> - " the server puts in front of the label comes off, exactly
+ * as it does on the dock's own rows. */
 QString DestinationDialog::suggestionName(const DsrSuggestion &suggestion)
 {
-	if (!suggestion.label.isEmpty())
-		return suggestion.label;
-	return QStringLiteral("%1 - %2").arg(suggestion.platform, suggestion.username);
+	const QString label = dsrStripPlatformPrefix(suggestion.label, suggestion.platform);
+	if (!label.isEmpty())
+		return label;
+	if (!suggestion.username.isEmpty())
+		return suggestion.username;
+	return dsrPlatformName(suggestion.platform);
 }
 
 void DestinationDialog::loadSuggestions()
@@ -248,8 +308,7 @@ void DestinationDialog::loadSuggestions()
 			dlg->suggestionEmptyLabel->setText(dsrText("Destinations.AllAccountsAdded"));
 
 		for (const DsrSuggestion &suggestion : suggestions)
-			dlg->suggestionLayout->addWidget(suggestion.alreadyAdded ? dlg->makeAddedRow(suggestion)
-										 : dlg->makeSuggestionRow(suggestion));
+			dlg->suggestionLayout->addWidget(dlg->makeAccountRow(suggestion));
 	});
 }
 
@@ -279,13 +338,18 @@ void DestinationDialog::submitCustom()
 
 	customAddButton->setEnabled(false);
 	QPointer<DestinationDialog> self(this);
-	destinations->create(body, [self](bool ok, QString errorKey) {
+	const DsrRtmpTarget target = {serverEdit->text().trimmed(), keyEdit->text()};
+	destinations->create(body, [self, target](bool ok, QString errorKey, QString id) {
 		if (!self)
 			return;
 		self->customAddButton->setEnabled(true);
-		if (ok)
-			self->accept();
-		else
+		if (!ok) {
 			self->showError(errorKey);
+			return;
+		}
+		/* Keep a copy so the edit dialog can show what is set. The relay
+		 * stores these and never gives them back. */
+		dsrSecretStore(id, target);
+		self->accept();
 	});
 }

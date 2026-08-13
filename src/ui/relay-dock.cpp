@@ -245,6 +245,23 @@ void RelayDock::refreshUi()
 		summaryLabel->setText(summaryText(state));
 }
 
+/* The per-second tick exists for the live elapsed clock and for the settings
+ * changes OBS raises no event for. Neither matters while nothing is on screen,
+ * so a closed or hidden dock costs nothing. Going live is covered without it:
+ * STREAMING_STARTING refreshes the token and repairs the key. */
+void RelayDock::showEvent(QShowEvent *event)
+{
+	QWidget::showEvent(event);
+	refreshTick();
+	tick->start();
+}
+
+void RelayDock::hideEvent(QHideEvent *event)
+{
+	tick->stop();
+	QWidget::hideEvent(event);
+}
+
 void RelayDock::refreshTick()
 {
 	/* OBS raises no event for stream-settings or connected-account changes,
@@ -358,6 +375,9 @@ void RelayDock::handleFrontendEvent(enum obs_frontend_event event)
 		break;
 	case OBS_FRONTEND_EVENT_STREAMING_STARTING:
 		auth->ensureFreshToken();
+		/* Last moment the key can still be put right, and the only one
+		 * that does not depend on the dock being on screen. */
+		repairEmptyKey();
 		break;
 	case OBS_FRONTEND_EVENT_STREAMING_STARTED:
 		localStreamStartMs = QDateTime::currentMSecsSinceEpoch();

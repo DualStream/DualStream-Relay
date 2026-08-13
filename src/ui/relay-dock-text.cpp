@@ -34,20 +34,6 @@ QString dsrRelayStyleSheet()
 	 * Only surfaces and accents are set; text and window colors inherit the
 	 * active OBS theme so the dock is native in all six. */
 	return dsrSharedStyleSheet() + QStringLiteral(R"(
-#statusPill {
-	border-radius: 11px;
-	padding: 3px 12px;
-	font-weight: 600;
-	font-size: 12px;
-	color: palette(text);
-	background: rgba(128, 128, 128, 38);
-}
-#statusPill[state="live"]      { color: #F75B1E; background: rgba(247, 91, 30, 40); }
-#statusPill[state="ready"]     { color: #33A9D1; background: rgba(8, 142, 188, 40); }
-#statusPill[state="protected"] { color: #33A9D1; background: rgba(8, 142, 188, 40); }
-#statusPill[state="warn"]      { color: #E8981C; background: rgba(245, 158, 11, 38); }
-#statusPill[state="error"]     { color: #F87171; background: rgba(239, 68, 68, 38); }
-
 #timerLabel { color: palette(text); font-size: 12px; }
 
 #banner {
@@ -59,12 +45,7 @@ QString dsrRelayStyleSheet()
 #banner[kind="warn"]    { color: #E8981C; background: rgba(245, 158, 11, 30); }
 #banner[kind="error"]   { color: #F87171; background: rgba(239, 68, 68, 28); }
 
-#destRow {
-	border-radius: 10px;
-	background: rgba(255, 255, 255, 10);
-}
 #destRow:hover { background: rgba(255, 255, 255, 20); }
-#destName { font-weight: 500; }
 #destState[state="live"]         { color: #4ADE80; font-weight: 600; }
 #destState[state="connecting"]   { color: #E8981C; }
 #destState[state="reconnecting"] { color: #E8981C; }
@@ -72,15 +53,6 @@ QString dsrRelayStyleSheet()
 #destState[state="ended"]        { color: palette(text); }
 #destState[state="applying"]     { color: #E8981C; }
 #destError { color: #F87171; font-size: 11px; }
-#canvasBadge {
-	color: palette(text);
-	font-size: 11px;
-	padding: 1px 7px;
-	border-radius: 8px;
-	background: rgba(128, 128, 128, 40);
-}
-#mutedText { color: palette(text); font-size: 12px; }
-#bodyText { font-size: 13px; }
 
 /* The platform mark is painted, not styled: the artwork is a white
  * silhouette recolored per brand, which a style sheet cannot express. */

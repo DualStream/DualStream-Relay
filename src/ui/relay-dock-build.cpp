@@ -247,10 +247,10 @@ RelayDock::RelayDock(QWidget *parent) : QWidget(parent)
 	connect(status, &RelayStatus::updated, this, &RelayDock::refreshUi);
 	connect(status, &RelayStatus::endFinished, this, [this](bool) { refreshUi(); });
 
+	/* Started by showEvent, so a dock the user has closed does no work. */
 	tick = new QTimer(this);
 	tick->setInterval(1000);
 	connect(tick, &QTimer::timeout, this, &RelayDock::refreshTick);
-	tick->start();
 
 	setStyleSheet(dsrRelayStyleSheet());
 	setMinimumWidth(260);

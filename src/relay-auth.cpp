@@ -21,6 +21,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "relay-auth.hpp"
 
 #include "relay-auth-internal.hpp"
+#include "relay-secrets.hpp"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -102,11 +103,28 @@ DsrHttpReply runRequest(const QByteArray &verb, const QByteArray &url, const QBy
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &reply.body);
 	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, kConnectTimeoutMs);
 	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, kRequestTimeoutMs);
-	curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-	curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 3L);
 	/* Required for timeouts on threads: signal-based DNS timeout handling
 	 * is not thread safe. */
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+	/* The bearer travels as a custom header, and curl repeats custom headers
+	 * to a redirect target whatever host or scheme it names. Redirects are
+	 * therefore refused outright rather than merely capped: the API does not
+	 * use them, and the token never leaves the host the user configured. */
+	curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+
+	/* curl's default protocol set is far wider than this needs, and includes
+	 * schemes that read local files. */
+#if LIBCURL_VERSION_NUM >= 0x075500
+	curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https,http");
+#else
+	curl_easy_setopt(curl, CURLOPT_PROTOCOLS, (long)(CURLPROTO_HTTPS | CURLPROTO_HTTP));
+#endif
+
+	/* Both default to on, and both are stated anyway: a build linking a
+	 * differently configured libcurl must not quietly stop verifying. */
+	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
 
 	if (verb == "POST") {
 		curl_easy_setopt(curl, CURLOPT_POST, 1L);
@@ -190,11 +208,27 @@ void RelayAuth::loadState()
 		return;
 
 	const QJsonObject obj = QJsonDocument::fromJson(file.readAll()).object();
-	accessToken = obj.value(QStringLiteral("access_token")).toString();
-	refreshValue = obj.value(QStringLiteral("refresh_token")).toString();
 	accountEmail = obj.value(QStringLiteral("email")).toString();
 	issuedAt = static_cast<qint64>(obj.value(QStringLiteral("issued_at")).toDouble());
 	expiresIn = static_cast<qint64>(obj.value(QStringLiteral("expires_in")).toDouble());
+
+	/* Tokens are encrypted where the platform offers a way to do it. A file
+	 * written before that, or on a platform without one, still carries them
+	 * in the clear; reading those keeps the user signed in, and the next
+	 * save puts them away properly. */
+	const QString sealed = obj.value(QStringLiteral("tokens")).toString();
+	if (!sealed.isEmpty()) {
+		const QJsonObject tokens =
+			QJsonDocument::fromJson(dsrSecretUnprotectText(sealed).toUtf8()).object();
+		accessToken = tokens.value(QStringLiteral("access_token")).toString();
+		refreshValue = tokens.value(QStringLiteral("refresh_token")).toString();
+		return;
+	}
+
+	accessToken = obj.value(QStringLiteral("access_token")).toString();
+	refreshValue = obj.value(QStringLiteral("refresh_token")).toString();
+	if (!refreshValue.isEmpty() && dsrSecretsAvailable())
+		saveState();
 }
 
 void RelayAuth::saveState()
@@ -210,11 +244,26 @@ void RelayAuth::saveState()
 	}
 
 	QJsonObject obj;
-	obj.insert(QStringLiteral("access_token"), accessToken);
-	obj.insert(QStringLiteral("refresh_token"), refreshValue);
 	obj.insert(QStringLiteral("email"), accountEmail);
 	obj.insert(QStringLiteral("issued_at"), static_cast<double>(issuedAt));
 	obj.insert(QStringLiteral("expires_in"), static_cast<double>(expiresIn));
+
+	QJsonObject tokens;
+	tokens.insert(QStringLiteral("access_token"), accessToken);
+	tokens.insert(QStringLiteral("refresh_token"), refreshValue);
+
+	const QString sealed =
+		dsrSecretProtectText(QString::fromUtf8(QJsonDocument(tokens).toJson(QJsonDocument::Compact)));
+	if (!sealed.isEmpty()) {
+		obj.insert(QStringLiteral("tokens"), sealed);
+	} else {
+		/* No store on this platform. The refresh token still has to
+		 * survive a restart or the user is signed out every launch, so
+		 * it goes in as it always has, in a file only their account can
+		 * read. */
+		obj.insert(QStringLiteral("access_token"), accessToken);
+		obj.insert(QStringLiteral("refresh_token"), refreshValue);
+	}
 
 	QSaveFile file(path);
 	if (!file.open(QIODevice::WriteOnly))
@@ -401,5 +450,8 @@ void RelayAuth::signOut()
 	issuedAt = 0;
 	expiresIn = 0;
 	saveState();
+	/* The destinations belonged to the account that just left, so the keys
+	 * cached for them do not survive it. */
+	dsrSecretForgetAll();
 	emit stateChanged();
 }

@@ -1,11 +1,17 @@
 # HTTP surface the plugin speaks
 
-The plugin is a thin client of the DualStream web API. It holds no secrets:
-sign-in uses a browser pairing flow designed for public clients, and the
-only credential the plugin stores is the resulting bearer token, kept under
-the OBS module config directory.
+The plugin is a thin client of the DualStream web API. It ships no secrets:
+sign-in uses a browser pairing flow designed for public clients, and nothing
+is embedded in the binary.
 
-Base URL: `https://dualstream.gg`. The `DSRELAY_API_BASE` environment
+Two things are kept under the OBS module config directory: the bearer and
+refresh tokens from sign-in, and the server and stream key of any custom
+RTMP destination, the latter only so the edit dialog can show what a
+destination is set to. Both are encrypted with the operating system's own
+facility where one is wired up. See the README for what that means per
+platform.
+
+Base URL: `https://www.dualstream.gg`. The `DSRELAY_API_BASE` environment
 variable overrides it for development.
 
 Every request that carries a body sends `Content-Type: application/json`.

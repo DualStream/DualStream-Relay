@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Dual Stream Studio Inc <hello@dualstream.gg>
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Fails when any tracked source file exceeds the line ceiling. Run with file
 # arguments to check only those files (the pre-commit hook does), or with none
 # to scan the whole tree.

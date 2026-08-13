@@ -27,6 +27,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 class QCheckBox;
 class QLabel;
+class QPushButton;
+class QVBoxLayout;
 
 /* Only what has to be local lives here: account, the disconnect protection
  * toggle, stream routing, diagnostics. Slates, billing and key management
@@ -44,6 +46,13 @@ signals:
 	void signedOut();
 
 private:
+	QVBoxLayout *addCard(QVBoxLayout *root, const char *headerKey);
+	void buildAccountCard(QVBoxLayout *root);
+	void buildStreamingCard(QVBoxLayout *root);
+	void buildProtectionCard(QVBoxLayout *root);
+	void buildVerticalCard(QVBoxLayout *root);
+	void buildDiagnosticsCard(QVBoxLayout *root);
+
 	void refreshTarget();
 	void loadProtection();
 	QCheckBox *buildVerticalToggle();
@@ -52,7 +61,13 @@ private:
 	RelayAuth *auth;
 	RelayStatus *status;
 
+	QLabel *routePill = nullptr;
 	QLabel *targetLabel = nullptr;
+	QLabel *routeNote = nullptr;
+	QPushButton *routeButton = nullptr;
+	QPushButton *restoreButton = nullptr;
+
 	QCheckBox *protectionCheck = nullptr;
+	QLabel *protectionNote = nullptr;
 	bool protectionLoaded = false;
 };

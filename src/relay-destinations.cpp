@@ -21,6 +21,22 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "relay-destinations.hpp"
 
 #include <QJsonArray>
+#include <QSet>
+#include <QUrl>
+
+#include "relay-secrets.hpp"
+
+namespace {
+
+/* A destination id lands in a URL path. Ids come from our own API and are
+ * opaque, so nothing is assumed about their shape rather than trusting them to
+ * be path-safe. */
+QString pathSegment(const QString &value)
+{
+	return QString::fromLatin1(QUrl::toPercentEncoding(value));
+}
+
+} // namespace
 
 RelayDestinations::RelayDestinations(RelayAuth *auth, QObject *parent) : QObject(parent), auth(auth) {}
 
@@ -52,6 +68,14 @@ void RelayDestinations::refresh()
 			dest.metadata = row.value(QStringLiteral("metadata")).toObject();
 			items.append(dest);
 		}
+
+		/* A destination removed from another device leaves its cached
+		 * stream key behind here, so the authoritative list is what
+		 * decides which cached keys are still worth keeping. */
+		QSet<QString> live;
+		for (const DsrDestination &dest : items)
+			live.insert(dest.id);
+		dsrSecretPrune(live);
 
 		loadedFlag = true;
 		emit changed();
@@ -105,22 +129,30 @@ void RelayDestinations::fetchDiscover(std::function<void(bool, QVector<DsrSugges
 	});
 }
 
-void RelayDestinations::create(const QJsonObject &body, std::function<void(bool, QString)> done)
+void RelayDestinations::create(const QJsonObject &body, std::function<void(bool, QString, QString)> done)
 {
 	auth->post(QStringLiteral("/api/relay/destinations"), body, [this, done](const DsrApiResult &result) {
 		if (result.ok()) {
 			refresh();
-			if (done)
-				done(true, QString());
+			if (done) {
+				/* The created row comes back with the response, and
+				 * its id is what a caller needs to file the stream
+				 * key it just sent under. */
+				const QString id = result.body.value(QStringLiteral("destination"))
+							   .toObject()
+							   .value(QStringLiteral("id"))
+							   .toString();
+				done(true, QString(), id);
+			}
 		} else if (done) {
-			done(false, errorKeyFor(result));
+			done(false, errorKeyFor(result), QString());
 		}
 	});
 }
 
 void RelayDestinations::modify(const QString &id, const QJsonObject &patchBody, std::function<void(bool, QString)> done)
 {
-	auth->patch(QStringLiteral("/api/relay/destinations/%1").arg(id), patchBody,
+	auth->patch(QStringLiteral("/api/relay/destinations/%1").arg(pathSegment(id)), patchBody,
 		    [this, done](const DsrApiResult &result) {
 			    if (result.ok()) {
 				    refresh();
@@ -134,7 +166,7 @@ void RelayDestinations::modify(const QString &id, const QJsonObject &patchBody, 
 
 void RelayDestinations::remove(const QString &id, std::function<void(bool, QString)> done)
 {
-	auth->del(QStringLiteral("/api/relay/destinations/%1").arg(id), [this, done](const DsrApiResult &result) {
+	auth->del(QStringLiteral("/api/relay/destinations/%1").arg(pathSegment(id)), [this, done](const DsrApiResult &result) {
 		if (result.ok()) {
 			refresh();
 			if (done)
@@ -147,7 +179,7 @@ void RelayDestinations::remove(const QString &id, std::function<void(bool, QStri
 
 void RelayDestinations::test(const QString &id, std::function<void(bool, bool)> done)
 {
-	auth->post(QStringLiteral("/api/relay/destinations/%1/test").arg(id), QJsonObject(),
+	auth->post(QStringLiteral("/api/relay/destinations/%1/test").arg(pathSegment(id)), QJsonObject(),
 		   [done](const DsrApiResult &result) {
 			   if (done)
 				   done(result.ok(), result.body.value(QStringLiteral("reachable")).toBool());

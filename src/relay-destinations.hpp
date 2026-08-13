@@ -62,7 +62,9 @@ public:
 
 	void refresh();
 	void fetchDiscover(std::function<void(bool ok, QVector<DsrSuggestion>)> done);
-	void create(const QJsonObject &body, std::function<void(bool ok, QString errorKey)> done);
+	/* The id of the created destination comes back with the result, so the
+	 * caller can file the stream key it just sent under it. */
+	void create(const QJsonObject &body, std::function<void(bool ok, QString errorKey, QString id)> done);
 	void modify(const QString &id, const QJsonObject &patchBody,
 		    std::function<void(bool ok, QString errorKey)> done);
 	void remove(const QString &id, std::function<void(bool ok, QString errorKey)> done);

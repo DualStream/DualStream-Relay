@@ -7,6 +7,7 @@
 *.h text eol=lf
 *.cpp text eol=lf
 *.hpp text eol=lf
+*.effect text eol=lf
 *.cmake text eol=lf
 CMakeLists.txt text eol=lf
 *.json text eol=lf

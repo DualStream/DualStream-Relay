@@ -44,132 +44,211 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "dsr-ui-common.hpp"
 #include "vertical-common.hpp"
 
+namespace {
+
+QLabel *makeNote(const QString &text)
+{
+	QLabel *note = new QLabel(text);
+	note->setObjectName(QStringLiteral("settingsNote"));
+	note->setWordWrap(true);
+	return note;
+}
+
+QPushButton *makeSecondary(const QString &text)
+{
+	QPushButton *button = new QPushButton(text);
+	button->setObjectName(QStringLiteral("secondaryButton"));
+	button->setCursor(Qt::PointingHandCursor);
+	return button;
+}
+
+/* Label on the left, value on the right, for a list of facts rather than a
+ * paragraph of them. */
+void addFactRow(QVBoxLayout *body, const char *labelKey, const QString &value)
+{
+	QHBoxLayout *row = new QHBoxLayout;
+	row->setContentsMargins(0, 0, 0, 0);
+
+	QLabel *name = new QLabel(dsrText(labelKey));
+	name->setObjectName(QStringLiteral("settingsNote"));
+	row->addWidget(name);
+	row->addStretch();
+
+	QLabel *shown = new QLabel(value);
+	shown->setObjectName(QStringLiteral("settingsValue"));
+	shown->setTextInteractionFlags(Qt::TextSelectableByMouse);
+	row->addWidget(shown);
+
+	body->addLayout(row);
+}
+
+} // namespace
+
 SettingsDialog::SettingsDialog(RelayAuth *auth, RelayStatus *status, QWidget *parent)
 	: QDialog(parent),
 	  auth(auth),
 	  status(status)
 {
 	setWindowTitle(dsrText("Settings.Title"));
-	setMinimumWidth(420);
+	setMinimumWidth(440);
+	setStyleSheet(dsrSharedStyleSheet());
 
-	QVBoxLayout *layout = new QVBoxLayout(this);
+	QVBoxLayout *root = new QVBoxLayout(this);
+	root->setSpacing(10);
 
-	layout->addWidget(dsrMakeSectionHeader("Settings.Account"));
-	QHBoxLayout *accountRow = new QHBoxLayout;
-	QLabel *emailLabel = new QLabel(!auth->signedIn()         ? dsrText("Settings.NotSignedIn")
-					: auth->email().isEmpty() ? dsrText("Settings.SignedIn")
-								  : auth->email());
-	accountRow->addWidget(emailLabel, 1);
-	QPushButton *signOutButton = new QPushButton(dsrText("Settings.SignOut"));
-	signOutButton->setVisible(auth->signedIn());
-	connect(signOutButton, &QPushButton::clicked, this, [this]() {
+	buildAccountCard(root);
+	buildStreamingCard(root);
+	buildProtectionCard(root);
+	if (VerticalCanvas::instance())
+		buildVerticalCard(root);
+	buildDiagnosticsCard(root);
+	root->addStretch();
+
+	QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
+	buttons->button(QDialogButtonBox::Close)->setText(dsrText("Button.Close"));
+	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+	root->addWidget(buttons);
+
+	refreshTarget();
+	loadProtection();
+}
+
+/* One rounded surface per topic, so the dialog reads as a handful of cards
+ * rather than one column of text divided by rules. Returns the layout the
+ * card's contents go in. */
+QVBoxLayout *SettingsDialog::addCard(QVBoxLayout *root, const char *headerKey)
+{
+	QFrame *card = new QFrame;
+	card->setObjectName(QStringLiteral("settingsCard"));
+
+	QVBoxLayout *body = new QVBoxLayout(card);
+	body->setContentsMargins(14, 12, 14, 12);
+	body->setSpacing(8);
+	body->addWidget(dsrMakeSectionHeader(headerKey));
+
+	root->addWidget(card);
+	return body;
+}
+
+void SettingsDialog::buildAccountCard(QVBoxLayout *root)
+{
+	QVBoxLayout *body = addCard(root, "Settings.Account");
+
+	QHBoxLayout *row = new QHBoxLayout;
+	row->setContentsMargins(0, 0, 0, 0);
+	QLabel *email = new QLabel(!auth->signedIn()         ? dsrText("Settings.NotSignedIn")
+				   : auth->email().isEmpty() ? dsrText("Settings.SignedIn")
+							     : auth->email());
+	email->setTextInteractionFlags(Qt::TextSelectableByMouse);
+	row->addWidget(email, 1);
+
+	QPushButton *manage = makeSecondary(dsrText("Settings.OpenAccount"));
+	connect(manage, &QPushButton::clicked, this,
+		[this]() { QDesktopServices::openUrl(QUrl(this->auth->webUrl(QStringLiteral("/account")))); });
+	row->addWidget(manage);
+
+	QPushButton *signOut = makeSecondary(dsrText("Settings.SignOut"));
+	signOut->setVisible(auth->signedIn());
+	connect(signOut, &QPushButton::clicked, this, [this]() {
 		this->auth->signOut();
 		emit signedOut();
 		close();
 	});
-	accountRow->addWidget(signOutButton);
-	layout->addLayout(accountRow);
+	row->addWidget(signOut);
+	body->addLayout(row);
 
-	layout->addWidget(dsrMakeSeparator());
+	body->addWidget(makeNote(dsrText("Settings.ConsoleNote")));
+}
 
-	layout->addWidget(dsrMakeSectionHeader("Settings.Protection"));
+void SettingsDialog::buildStreamingCard(QVBoxLayout *root)
+{
+	QVBoxLayout *body = addCard(root, "Settings.Streaming");
+
+	routePill = new QLabel;
+	routePill->setObjectName(QStringLiteral("statusPill"));
+	QHBoxLayout *pillRow = new QHBoxLayout;
+	pillRow->setContentsMargins(0, 0, 0, 0);
+	pillRow->addWidget(routePill);
+	pillRow->addStretch();
+	body->addLayout(pillRow);
+
+	targetLabel = new QLabel;
+	targetLabel->setObjectName(QStringLiteral("monoValue"));
+	targetLabel->setWordWrap(true);
+	targetLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+	body->addWidget(targetLabel);
+
+	routeButton = new QPushButton(dsrText("Action.UseRelay"));
+	routeButton->setObjectName(QStringLiteral("primaryButton"));
+	routeButton->setCursor(Qt::PointingHandCursor);
+	connect(routeButton, &QPushButton::clicked, this, [this]() {
+		emit routeRequested();
+		refreshTarget();
+	});
+
+	restoreButton = makeSecondary(dsrText("Settings.RestorePrevious"));
+	connect(restoreButton, &QPushButton::clicked, this, [this]() {
+		emit restoreRequested();
+		refreshTarget();
+	});
+
+	QHBoxLayout *actions = new QHBoxLayout;
+	actions->setContentsMargins(0, 0, 0, 0);
+	actions->addWidget(routeButton);
+	actions->addWidget(restoreButton);
+	actions->addStretch();
+	body->addLayout(actions);
+
+	routeNote = makeNote(QString());
+	body->addWidget(routeNote);
+}
+
+void SettingsDialog::buildProtectionCard(QVBoxLayout *root)
+{
+	QVBoxLayout *body = addCard(root, "Settings.Protection");
+
 	protectionCheck = new QCheckBox(dsrText("Settings.ProtectionToggle"));
 	protectionCheck->setEnabled(false);
 	connect(protectionCheck, &QCheckBox::toggled, this, [this](bool on) {
 		if (!protectionLoaded)
 			return;
-		QJsonObject body;
-		body.insert(QStringLiteral("disconnect_protection"), on);
-		this->auth->patch(QStringLiteral("/api/relay/settings"), body, nullptr);
+		QJsonObject settings;
+		settings.insert(QStringLiteral("disconnect_protection"), on);
+		this->auth->patch(QStringLiteral("/api/relay/settings"), settings, nullptr);
 	});
-	layout->addWidget(protectionCheck);
-	QLabel *protectionNote = new QLabel(dsrText("Settings.ProtectionNote"));
-	protectionNote->setWordWrap(true);
-	protectionNote->setStyleSheet(QStringLiteral("color: #8a8a8a;"));
-	layout->addWidget(protectionNote);
+	body->addWidget(protectionCheck);
 
-	if (VerticalCanvas::instance()) {
-		layout->addWidget(dsrMakeSeparator());
-		layout->addWidget(dsrMakeSectionHeader("Settings.Vertical"));
-		layout->addWidget(buildVerticalToggle());
-		QLabel *verticalNote = new QLabel(dsrText("Settings.VerticalNote"));
-		verticalNote->setWordWrap(true);
-		verticalNote->setStyleSheet(QStringLiteral("color: #8a8a8a;"));
-		layout->addWidget(verticalNote);
-	}
+	/* Says why the box cannot be moved yet, rather than leaving a greyed
+	 * control with no explanation. */
+	protectionNote = makeNote(dsrText("Settings.ProtectionLoading"));
+	body->addWidget(protectionNote);
+}
 
-	layout->addWidget(dsrMakeSeparator());
+void SettingsDialog::buildVerticalCard(QVBoxLayout *root)
+{
+	QVBoxLayout *body = addCard(root, "Settings.Vertical");
+	body->addWidget(buildVerticalToggle());
+	body->addWidget(makeNote(dsrText("Settings.VerticalNote")));
+}
 
-	layout->addWidget(dsrMakeSectionHeader("Settings.Streaming"));
-	targetLabel = new QLabel;
-	targetLabel->setWordWrap(true);
-	targetLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-	layout->addWidget(targetLabel);
+void SettingsDialog::buildDiagnosticsCard(QVBoxLayout *root)
+{
+	QVBoxLayout *body = addCard(root, "Settings.Diagnostics");
 
-	QHBoxLayout *routeRow = new QHBoxLayout;
-	QPushButton *routeButton = new QPushButton(dsrText("Action.UseRelay"));
-	routeButton->setObjectName(QStringLiteral("primaryButton"));
-	connect(routeButton, &QPushButton::clicked, this, [this]() {
-		emit routeRequested();
-		refreshTarget();
-	});
-	routeRow->addWidget(routeButton);
-
-	QPushButton *restoreButton = new QPushButton(dsrText("Settings.RestorePrevious"));
-	restoreButton->setEnabled(dsr_route_have_snapshot());
-	connect(restoreButton, &QPushButton::clicked, this, [this, restoreButton]() {
-		emit restoreRequested();
-		restoreButton->setEnabled(dsr_route_have_snapshot());
-		refreshTarget();
-	});
-	routeRow->addWidget(restoreButton);
-	routeRow->addStretch();
-	layout->addLayout(routeRow);
-
-	layout->addWidget(dsrMakeSeparator());
-
-	QHBoxLayout *linksRow = new QHBoxLayout;
-	QPushButton *accountLink = new QPushButton(dsrText("Settings.OpenAccount"));
-	accountLink->setObjectName(QStringLiteral("secondaryButton"));
-	accountLink->setCursor(Qt::PointingHandCursor);
-	connect(accountLink, &QPushButton::clicked, this,
-		[this]() { QDesktopServices::openUrl(QUrl(this->auth->webUrl(QStringLiteral("/account")))); });
-	linksRow->addWidget(accountLink);
-	linksRow->addStretch();
-	layout->addLayout(linksRow);
-
-	QLabel *linksNote = new QLabel(dsrText("Settings.ConsoleNote"));
-	linksNote->setWordWrap(true);
-	linksNote->setStyleSheet(QStringLiteral("color: #8a8a8a;"));
-	layout->addWidget(linksNote);
-
-	layout->addWidget(dsrMakeSeparator());
-
-	layout->addWidget(dsrMakeSectionHeader("Settings.Diagnostics"));
-	QLabel *versionLabel =
-		new QLabel(QStringLiteral("%1 %2").arg(dsrText("Settings.Version"), QLatin1String(PLUGIN_VERSION)));
-	layout->addWidget(versionLabel);
+	addFactRow(body, "Settings.Version", QLatin1String(PLUGIN_VERSION));
 	const QDateTime lastPoll = status->lastSuccessAt();
-	QLabel *pollLabel = new QLabel(QStringLiteral("%1 %2").arg(dsrText("Settings.LastUpdate"),
-								   lastPoll.isValid() ? lastPoll.toString(Qt::ISODate)
-										      : dsrText("Settings.Never")));
-	layout->addWidget(pollLabel);
+	addFactRow(body, "Settings.LastUpdate",
+		   lastPoll.isValid() ? lastPoll.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))
+				      : dsrText("Settings.Never"));
 
-	QPushButton *copyButton = new QPushButton(dsrText("Settings.CopyDiagnostics"));
+	QPushButton *copyButton = makeSecondary(dsrText("Settings.CopyDiagnostics"));
 	connect(copyButton, &QPushButton::clicked, this,
 		[this]() { QApplication::clipboard()->setText(buildDiagnostics()); });
 	QHBoxLayout *copyRow = new QHBoxLayout;
+	copyRow->setContentsMargins(0, 0, 0, 0);
 	copyRow->addWidget(copyButton);
 	copyRow->addStretch();
-	layout->addLayout(copyRow);
-
-	QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
-	buttons->button(QDialogButtonBox::Close)->setText(dsrText("Button.Close"));
-	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-	layout->addWidget(buttons);
-
-	refreshTarget();
-	loadProtection();
+	body->addLayout(copyRow);
 }
 
 /* The one switch for the portrait canvas. It lives here rather than on the
@@ -194,29 +273,46 @@ QCheckBox *SettingsDialog::buildVerticalToggle()
 	return check;
 }
 
+/* Where the stream output points, and the one action worth offering for it.
+ * Routing is offered only when the output is not already on the relay, and
+ * restoring only when there are previous settings to restore, so neither
+ * button is ever present with nothing to do. */
 void SettingsDialog::refreshTarget()
 {
+	const bool routed = dsr_route_is_relay();
+	const bool haveSnapshot = dsr_route_have_snapshot();
+
+	routePill->setText(dsrText(routed ? "Settings.RouteOn" : "Settings.RouteOff"));
+	routePill->setProperty("state", routed ? QStringLiteral("ready") : QStringLiteral("warn"));
+	dsrRepolish(routePill);
+
 	char *server = dsr_route_current_server();
-	if (server) {
-		targetLabel->setText(
-			QStringLiteral("%1 %2").arg(dsrText("Settings.CurrentTarget"), QString::fromUtf8(server)));
-		bfree(server);
-	} else {
-		targetLabel->setText(dsrText("Settings.NoTarget"));
-	}
+	targetLabel->setText(server ? QString::fromUtf8(server) : dsrText("Settings.NoTarget"));
+	bfree(server);
+
+	routeButton->setVisible(!routed);
+	restoreButton->setVisible(routed && haveSnapshot);
+	routeNote->setText(dsrText(routed ? (haveSnapshot ? "Settings.RouteOnNote" : "Settings.RouteNoSnapshot")
+					  : "Settings.RouteOffNote"));
 }
 
 void SettingsDialog::loadProtection()
 {
 	QPointer<SettingsDialog> self(this);
 	auth->get(QStringLiteral("/api/relay/settings"), [self](const DsrApiResult &result) {
-		if (!self || !result.ok())
+		if (!self)
 			return;
+		if (!result.ok()) {
+			self->protectionNote->setText(dsrText("Settings.ProtectionUnavailable"));
+			return;
+		}
+
 		const QJsonObject settings = result.body.value(QStringLiteral("settings")).toObject();
 		self->protectionLoaded = false;
 		self->protectionCheck->setChecked(settings.value(QStringLiteral("disconnect_protection")).toBool(true));
 		self->protectionLoaded = true;
 		self->protectionCheck->setEnabled(true);
+		self->protectionNote->setText(dsrText("Settings.ProtectionNote"));
 	});
 }
 

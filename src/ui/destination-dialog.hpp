@@ -24,6 +24,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "../relay-auth.hpp"
 #include "../relay-destinations.hpp"
+#include "../relay-secrets.hpp"
 
 class QCheckBox;
 class QComboBox;
@@ -51,9 +52,9 @@ private:
 	/* Implemented in destination-dialog-add.cpp. */
 	void buildAddUi();
 	void loadSuggestions();
-	QWidget *makeSuggestionRow(const DsrSuggestion &suggestion);
-	QWidget *makeAddedRow(const DsrSuggestion &suggestion);
+	QWidget *makeAccountRow(const DsrSuggestion &suggestion);
 	static QString suggestionName(const DsrSuggestion &suggestion);
+	void applyPreset();
 	void submitCustom();
 
 	void buildEditUi();
@@ -69,6 +70,10 @@ private:
 	bool editMode = false;
 	DsrDestination existing;
 
+	/* Edit mode: the server and key this machine has on file for the
+	 * destination, so an untouched field is not mistaken for a change. */
+	DsrRtmpTarget cached;
+
 	QVBoxLayout *suggestionLayout = nullptr;
 	QLabel *suggestionEmptyLabel = nullptr;
 	QCheckBox *termsCheck = nullptr;
@@ -81,6 +86,10 @@ private:
 	QComboBox *canvasCombo = nullptr;
 	QLabel *canvasNote = nullptr;
 	QPushButton *customAddButton = nullptr;
+
+	/* The server URL a preset last put in the field, so switching presets
+	 * replaces its own value but never one the user typed. */
+	QString filledServer;
 
 	QLineEdit *ytLandscapeTitle = nullptr;
 	QLineEdit *ytPortraitTitle = nullptr;

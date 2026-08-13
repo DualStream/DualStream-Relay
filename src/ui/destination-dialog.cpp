@@ -26,6 +26,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QHBoxLayout>
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
@@ -34,6 +35,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPushButton>
 #include <QVBoxLayout>
 
+#include "../relay-secrets.hpp"
 #include "dsr-ui-common.hpp"
 
 QStringList DestinationDialog::allowedCanvases(const QString &platform)
@@ -105,16 +107,31 @@ void DestinationDialog::buildEditUi()
 	form->addRow(dsrText("Destinations.Canvas"), canvasCombo);
 
 	if (existing.type == QLatin1String("custom")) {
-		serverEdit = new QLineEdit;
+		/* The API never returns a stored server or key, so the only
+		 * values that can be shown are the copies kept on this machine.
+		 * Without them both fields stay blank, and filling them in
+		 * replaces the stored pair. */
+		cached = dsrSecretLoad(existing.id);
+
+		serverEdit = new QLineEdit(cached.url);
 		serverEdit->setPlaceholderText(dsrText("Destinations.Unchanged"));
 		form->addRow(dsrText("Destinations.Server"), serverEdit);
 
-		/* The API never returns a stored key, so the field cannot be
-		 * prefilled. Both fields together replace the stored pair. */
-		keyEdit = new QLineEdit;
+		keyEdit = new QLineEdit(cached.key);
 		keyEdit->setEchoMode(QLineEdit::Password);
 		keyEdit->setPlaceholderText(dsrText("Destinations.Unchanged"));
-		form->addRow(dsrText("Destinations.StreamKey"), keyEdit);
+		QPushButton *reveal = new QPushButton(dsrText("Destinations.RevealKey"));
+		reveal->setObjectName(QStringLiteral("secondaryButton"));
+		reveal->setCheckable(true);
+		reveal->setCursor(Qt::PointingHandCursor);
+		connect(reveal, &QPushButton::toggled, this, [this](bool on) {
+			keyEdit->setEchoMode(on ? QLineEdit::Normal : QLineEdit::Password);
+		});
+		QHBoxLayout *keyRow = new QHBoxLayout;
+		keyRow->setContentsMargins(0, 0, 0, 0);
+		keyRow->addWidget(keyEdit, 1);
+		keyRow->addWidget(reveal);
+		form->addRow(dsrText("Destinations.StreamKey"), keyRow);
 	}
 
 	layout->addLayout(form);
@@ -167,16 +184,24 @@ void DestinationDialog::submitEdit()
 	if (canvas != existing.canvas)
 		body.insert(QStringLiteral("canvas"), canvas);
 
+	DsrRtmpTarget target;
 	if (serverEdit && keyEdit) {
-		const QString server = serverEdit->text().trimmed();
-		const QString key = keyEdit->text();
-		if (!server.isEmpty() || !key.isEmpty()) {
-			if (server.isEmpty() || key.isEmpty()) {
+		target.url = serverEdit->text().trimmed();
+		target.key = keyEdit->text();
+
+		/* The relay replaces the pair, so either one changing sends both
+		 * and both have to be there. Untouched prefilled fields are not
+		 * a change and are left out of the patch entirely. */
+		const bool changed = target.url != cached.url || target.key != cached.key;
+		if (changed && !target.isEmpty()) {
+			if (target.url.isEmpty() || target.key.isEmpty()) {
 				showError(QStringLiteral("Error.MissingRtmp"));
 				return;
 			}
-			body.insert(QStringLiteral("rtmp_url"), server);
-			body.insert(QStringLiteral("rtmp_key"), key);
+			body.insert(QStringLiteral("rtmp_url"), target.url);
+			body.insert(QStringLiteral("rtmp_key"), target.key);
+		} else {
+			target = DsrRtmpTarget();
 		}
 	}
 
@@ -201,13 +226,17 @@ void DestinationDialog::submitEdit()
 	}
 
 	QPointer<DestinationDialog> self(this);
-	destinations->modify(existing.id, body, [self](bool ok, QString errorKey) {
+	const QString id = existing.id;
+	destinations->modify(id, body, [self, id, target](bool ok, QString errorKey) {
 		if (!self)
 			return;
-		if (ok)
-			self->accept();
-		else
+		if (!ok) {
 			self->showError(errorKey);
+			return;
+		}
+		if (!target.isEmpty())
+			dsrSecretStore(id, target);
+		self->accept();
 	});
 }
 

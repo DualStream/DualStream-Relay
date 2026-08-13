@@ -24,6 +24,11 @@ endif()
 find_package(CURL REQUIRED)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE CURL::libcurl)
 
+if(OS_WINDOWS)
+  # DPAPI, for encrypting cached stream keys against the signed-in user.
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Crypt32)
+endif()
+
 if(ENABLE_QT)
   find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Core Qt6::Widgets)
@@ -45,11 +50,13 @@ target_sources(
     src/relay-auth.cpp
     src/relay-destinations.cpp
     src/relay-pairing.cpp
+    src/relay-secrets.cpp
     src/relay-status.cpp
     src/vertical-canvas.cpp
     src/vertical-scenes.cpp
     src/vertical-output.cpp
     src/vertical-transition.cpp
+    src/ui/dsr-platform-mark.cpp
     src/ui/dsr-source-icon.cpp
     src/ui/dsr-ui-common.cpp
     src/ui/dsr-widgets.cpp
@@ -64,6 +71,7 @@ target_sources(
     src/ui/vertical-preview.cpp
     src/ui/vertical-preview-draw.cpp
     src/ui/vertical-preview-edit.cpp
+    src/ui/vertical-preview-input.cpp
     src/ui/vertical-preview-menu.cpp
     src/ui/vertical-dock.cpp
     src/ui/vertical-sources-dock.cpp
