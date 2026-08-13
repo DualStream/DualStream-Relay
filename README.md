@@ -1,7 +1,13 @@
 # DualStream Relay for OBS
 
+![DualStream Relay for OBS](docs/images/DualStreamOBSPlugin.jpg)
+
 Go live on Twitch, YouTube, Kick and more at the same time, without your
 computer having to upload a separate stream to each one.
+
+> This is a third-party plugin from Dual Stream Studio Inc. It is not part of
+> OBS Studio, and it is not developed, endorsed or supported by the OBS
+> Project.
 
 Normally, streaming to three platforms at once means uploading your video
 three times over. Most home internet connections cannot manage that. This
@@ -34,7 +40,7 @@ works. That is being sorted out.
 ## Installing it
 
 1. Go to the
-   [releases page](https://github.com/DualStream/DualStream_OBS_Plugin/releases)
+   [releases page](https://github.com/DualStream/DualStream-Relay/releases)
    and download the file ending in `-windows-x64.zip`.
 2. Close OBS if it is open.
 3. Right-click the downloaded file and choose **Extract All**.
@@ -135,7 +141,9 @@ The same checks run automatically on every pull request.
 Built on [OBS Studio](https://obsproject.com) and started from the
 [OBS plugin template](https://github.com/obsproject/obs-plugintemplate).
 Thanks to the OBS Project and its contributors for the platform and the
-tooling that make plugins like this one possible.
+tooling that make plugins like this one possible. Being built on OBS Studio
+does not make this plugin part of it: DualStream Relay is developed
+independently, and the OBS Project neither endorses nor supports it.
 
 Two files are copied unchanged from OBS Studio, so the vertical canvas draws
 its out-of-bounds shading and spacing guides exactly the way the main OBS
