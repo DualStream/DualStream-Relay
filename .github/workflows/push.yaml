@@ -34,6 +34,12 @@ jobs:
       run:
         shell: bash
     steps:
+      # This job otherwise only handles artifacts, so nothing here would have
+      # the repository. The release notes are read from CHANGELOG.md, and at a
+      # tag that checkout is the changelog as it stood for this version.
+      # First, so its workspace clean cannot remove downloaded artifacts.
+      - uses: actions/checkout@v4
+
       - name: Check Release Tag
         id: check
         run: |
@@ -103,7 +109,7 @@ jobs:
             $0 == want { found = 1; next }
             found && /^## / { exit }
             found { print }
-          ' CHANGELOG.md > "${notes}"
+          ' CHANGELOG.md > "${notes}" || true
 
           if [[ ! -s "${notes}" ]]; then
             echo "::warning::No CHANGELOG section for ${{ steps.check.outputs.version }}"
