@@ -342,5 +342,41 @@ QString SettingsDialog::buildDiagnostics() const
 	dump.insert(QStringLiteral("dropped_frames"), stats.dropped_frames);
 	dump.insert(QStringLiteral("total_frames"), stats.total_frames);
 
+	/* The encoder facts that decide whether the relay can use the stream.
+	 * Most reports that read as connection trouble are settled by these
+	 * five lines. */
+	struct dsr_encoder_settings encoder;
+	if (dsr_encoder_read(&encoder)) {
+		dump.insert(QStringLiteral("output_mode"),
+			    encoder.advanced ? QStringLiteral("advanced") : QStringLiteral("simple"));
+		dump.insert(QStringLiteral("video_bitrate_kbps"), encoder.video_bitrate_kbps);
+		dump.insert(QStringLiteral("keyint_sec"), encoder.keyint_sec);
+	}
+
+	char *videoCodec = dsr_get_stream_video_codec();
+	dump.insert(QStringLiteral("video_codec"), videoCodec ? QString::fromUtf8(videoCodec) : QString());
+	bfree(videoCodec);
+
+	char *audioCodec = dsr_get_stream_audio_codec();
+	dump.insert(QStringLiteral("audio_codec"), audioCodec ? QString::fromUtf8(audioCodec) : QString());
+	bfree(audioCodec);
+
+	char *rateControl = dsr_encoder_rate_control();
+	dump.insert(QStringLiteral("rate_control"), rateControl ? QString::fromUtf8(rateControl) : QString());
+	bfree(rateControl);
+
+	char *account = dsr_get_connected_account();
+	dump.insert(QStringLiteral("connected_account"), account ? QString::fromUtf8(account) : QString());
+	bfree(account);
+
+	/* How the last stream actually ended, from the output itself. */
+	int stopCode = 0;
+	char *stopError = NULL;
+	if (dsr_stream_last_stop(&stopCode, &stopError)) {
+		dump.insert(QStringLiteral("last_stop_code"), stopCode);
+		dump.insert(QStringLiteral("last_stop_error"), stopError ? QString::fromUtf8(stopError) : QString());
+		bfree(stopError);
+	}
+
 	return QString::fromUtf8(QJsonDocument(dump).toJson(QJsonDocument::Indented));
 }

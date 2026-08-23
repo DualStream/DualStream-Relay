@@ -239,12 +239,18 @@ RelayDock::RelayDock(QWidget *parent) : QWidget(parent)
 		refreshUi();
 	});
 	connect(destinations, &RelayDestinations::loadFailed, this,
-		[this](int httpStatus, const QString &code, bool transportOk) {
+		[this](int httpStatus, const QString &code, bool transportOk, bool sessionDead) {
 			if (!transportOk) {
 				destOffline = true;
-			} else if (httpStatus == 401) {
-				/* Token dead even after a refresh attempt. */
-				auth->signOut();
+			} else if (httpStatus == 401 && sessionDead) {
+				/* The refresh credential was rejected, so the
+				 * session really is over. The account has not
+				 * changed, so the cached destination keys stay;
+				 * only an explicit sign-out wipes those. A 401
+				 * whose refresh merely could not be delivered
+				 * is left alone for the next call to retry. */
+				pairingError = dsrText("Error.SessionExpired");
+				auth->sessionExpired();
 			} else if (httpStatus == 403 && dsrIsEntitlementCode(code)) {
 				lapsed = true;
 			}

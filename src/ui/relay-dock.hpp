@@ -25,6 +25,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QStringList>
 #include <QWidget>
 
+#include <functional>
+
 #include <obs-frontend-api.h>
 
 #include "../relay-auth.hpp"
@@ -84,13 +86,33 @@ private:
 		Offline,
 	};
 
+	/* Where the stream is, which decides what may be written to the
+	 * streaming service. OBS reports a stream active only once it has
+	 * connected, so that flag alone would call the whole connect phase
+	 * idle and let the service be replaced out from under the thread
+	 * still reading it. */
+	enum class StreamPhase {
+		/* No output. The whole route may be rewritten. */
+		Idle,
+		/* The streaming-starting event, before the output has been
+		 * handed the service. The key may still be set in place. */
+		Starting,
+		/* The output owns the service and re-reads it on every
+		 * connection attempt. Nothing may be written. */
+		Running,
+	};
+
 	State computeState() const;
+	StreamPhase streamPhase() const;
 	void refreshUi();
 	void rebuildRows();
 	void refreshTick();
 	void refreshAll();
 	void fetchIngestTarget(std::function<void(bool ok)> done);
+	void finishTargetFetch(bool ok);
 	void routeToRelay();
+	void applyRoute();
+	bool routeChangeAllowed();
 	void offerEncoderTune();
 	QStringList encoderTuneChanges(const dsr_encoder_settings &current) const;
 	void restoreRoute();
@@ -98,10 +120,12 @@ private:
 	void openAddDialog();
 	void firstRunShow();
 	bool keyMismatch() const;
-	void repairEmptyKey();
+	void repairStreamKey();
 	void endEverything();
 	QString environmentSignature() const;
 	QString blockingSetupIssue() const;
+	QString connectedAccountNote() const;
+	QString streamStopNotice() const;
 	void openEditDialog(const QString &destinationId);
 
 	/* Implemented in relay-dock-direct.cpp. */
@@ -139,6 +163,10 @@ private:
 	QLabel *banner;
 	QPushButton *bannerAction;
 	std::function<void()> bannerActionFn;
+	/* Which banner is on screen, so the per-second tick can refresh the
+	 * one countdown it owns without overwriting anything that outranked
+	 * it. */
+	QString bannerKind;
 
 	/* content */
 	QStackedWidget *stack;
@@ -202,8 +230,34 @@ private:
 	};
 	QHash<QString, PendingToggle> pendingToggles;
 
+	/* The prepared SRT target the plugin routes to, plus the RTMPS key from
+	 * the same response for a profile that sits on the services.json entry.
+	 * The fetch time gates staleness: an ingest key can be rotated from the
+	 * web at any moment, so a cached target is re-read at every stream
+	 * start and whenever it has sat unused long enough to doubt. */
 	QString targetServer;
 	QString targetKey;
+	QString rtmpsServer;
+	QString rtmpsKey;
+	qint64 targetFetchedAtMs = 0;
 	bool targetFetched = false;
 	bool targetFetchInFlight = false;
+
+	/* Callbacks waiting on the fetch already in flight. A second request
+	 * while one is out joins it rather than being refused: the caller at
+	 * stream start needs its repair to run when the answer lands, whoever
+	 * asked first. */
+	QVector<std::function<void(bool)>> targetFetchWaiters;
+
+	/* True only across the streaming-starting event, the last moment at
+	 * which the key can still be set: OBS hands the service to the output
+	 * as soon as that event returns. Everything after is read from the
+	 * output itself, which is the only thing that knows whether it has
+	 * taken the service yet. */
+	bool streamStarting = false;
+
+	/* A route request waiting on the ingest target. Holds off a second
+	 * one, which would otherwise apply the route and ask about the
+	 * encoder once per click. */
+	bool routeRequestPending = false;
 };

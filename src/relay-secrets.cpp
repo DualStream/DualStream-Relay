@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "relay-secrets.hpp"
+#include "relay-secrets.h"
 
 #include <QFile>
 #include <QJsonDocument>
@@ -250,4 +251,29 @@ void dsrSecretForgetAll()
 	if (!kAvailable)
 		return;
 	writeStore(QJsonObject());
+}
+
+/* C bridge for the routing code, which keeps the replaced streaming service
+ * (key included) in a snapshot file of its own. */
+
+extern "C" char *dsr_secret_protect_cstr(const char *plain)
+{
+	if (!plain || !*plain)
+		return nullptr;
+
+	const QString sealed = dsrSecretProtectText(QString::fromUtf8(plain));
+	if (sealed.isEmpty())
+		return nullptr;
+	return bstrdup(sealed.toUtf8().constData());
+}
+
+extern "C" char *dsr_secret_unprotect_cstr(const char *sealed)
+{
+	if (!sealed || !*sealed)
+		return nullptr;
+
+	const QString plain = dsrSecretUnprotectText(QString::fromUtf8(sealed));
+	if (plain.isEmpty())
+		return nullptr;
+	return bstrdup(plain.toUtf8().constData());
 }

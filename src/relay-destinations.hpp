@@ -88,7 +88,7 @@ public:
 
 signals:
 	void changed();
-	void loadFailed(int status, const QString &code, bool transportOk);
+	void loadFailed(int status, const QString &code, bool transportOk, bool sessionDead);
 	/* A call that only an entitled account may make was refused. Reads stay
 	 * open to a lapsed account, so this is the first moment anything here
 	 * learns the subscription is not active. */

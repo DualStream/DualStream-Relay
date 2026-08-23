@@ -47,9 +47,12 @@ target_sources(
   PRIVATE
     src/plugin-main.c
     src/relay-output.c
+    src/relay-route.c
+    src/relay-stream-watch.c
     src/relay-auth.cpp
     src/relay-destinations.cpp
     src/relay-direct.cpp
+    src/relay-http.cpp
     src/relay-pairing.cpp
     src/relay-secrets.cpp
     src/relay-status.cpp
@@ -64,6 +67,7 @@ target_sources(
     src/ui/relay-dock.cpp
     src/ui/relay-dock-build.cpp
     src/ui/relay-dock-direct.cpp
+    src/ui/relay-dock-events.cpp
     src/ui/relay-dock-rows.cpp
     src/ui/relay-dock-state.cpp
     src/ui/relay-dock-routing.cpp

@@ -20,33 +20,13 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "relay-dock.hpp"
 
-#include <QApplication>
-#include <QCheckBox>
-#include <QClipboard>
-#include <QDesktopServices>
 #include <QDockWidget>
-#include <QEventLoop>
-#include <QFile>
-#include <QFontDatabase>
-#include <QFrame>
-#include <QHBoxLayout>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QLabel>
-#include <QMenu>
-#include <QMouseEvent>
-#include <QMessageBox>
-#include <QPainter>
-#include <QPen>
-#include <QPixmap>
 #include <QPushButton>
 #include <QResizeEvent>
-#include <QSaveFile>
 #include <QScrollArea>
 #include <QStackedWidget>
-#include <QStyle>
 #include <QTimer>
-#include <QUrl>
 #include <QVBoxLayout>
 
 #include <obs-module.h>
@@ -62,6 +42,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "settings-dialog.hpp"
 #include "vertical-dock.hpp"
 
+namespace {
+
+/* How long a fetched ingest target is trusted before an ordinary refresh
+ * re-reads it. Every stream start re-reads regardless; this only covers a
+ * dock sitting open for hours between streams. */
+const qint64 kTargetMaxAgeMs = 30 * 60 * 1000;
+
+} // namespace
+
 void RelayDock::setBanner(const QString &text, const char *kind, const QString &actionText,
 			  std::function<void()> action)
 {
@@ -69,11 +58,13 @@ void RelayDock::setBanner(const QString &text, const char *kind, const QString &
 		banner->setVisible(false);
 		bannerAction->setVisible(false);
 		bannerActionFn = nullptr;
+		bannerKind.clear();
 		return;
 	}
 
 	banner->setText(text);
 	banner->setProperty("kind", QLatin1String(kind));
+	bannerKind = QLatin1String(kind);
 	dsrRepolish(banner);
 	banner->setVisible(true);
 
@@ -125,8 +116,44 @@ void RelayDock::refreshUi()
 	 * every other banner: the user cannot act on anything else until it is
 	 * resolved. */
 	const QString blocker = blockingSetupIssue();
+	const QString stopNotice = streamStopNotice();
 	if (!blocker.isEmpty() && state != State::SignedOut && state != State::Pairing) {
 		setBanner(blocker, "error", QString(), nullptr);
+	} else if (!stopNotice.isEmpty() && !obs_frontend_streaming_active() && state != State::SignedOut &&
+		   state != State::Pairing && state != State::Lapsed) {
+		/* A stream ended on an error and no new one has started. That
+		 * outranks every other note, including an unreachable status
+		 * API: the same outage that hid the relay often took the
+		 * stream with it, and saying the stream is fine there would be
+		 * the one thing the user must not be told. When the ingest
+		 * details are also wrong, this carries the repair rather than
+		 * displacing the banner that offers it, and in an outage it
+		 * keeps the retry that is the only way back. Cleared when the
+		 * next stream starts or the route is put right. */
+		QString actionText;
+		std::function<void()> action;
+		if (state == State::Ready && keyMismatch()) {
+			actionText = dsrText("Button.Update");
+			action = [this]() {
+				routeToRelay();
+			};
+		} else if (state == State::Offline) {
+			actionText = dsrText("Button.Retry");
+			action = [this]() {
+				refreshAll();
+			};
+		}
+		setBanner(stopNotice, "error", actionText, action);
+	} else if (state == State::Live && !status->reachable()) {
+		/* The stream itself is up; only the status channel is not.
+		 * Live stays in front and the outage is a side note, because a
+		 * pill flipping to Offline mid-stream reads as the stream
+		 * being in trouble when it is not. */
+		const QDateTime last = status->lastSuccessAt();
+		const QString when = last.isValid() ? last.toLocalTime().toString(QStringLiteral("hh:mm:ss"))
+						    : dsrText("Settings.Never");
+		setBanner(QString(dsrText("Offline.Banner")).arg(when), "warn", dsrText("Button.Retry"),
+			  [this]() { refreshAll(); });
 	} else
 		/* banner, one at a time, highest priority first */
 		switch (state) {
@@ -155,11 +182,14 @@ void RelayDock::refreshUi()
 				setBanner(dsrText("Warning.KeyWrong"), "error", dsrText("Button.Update"),
 					  [this]() { routeToRelay(); });
 			} else {
-				/* Nothing is wrong, so the only thing left worth
-				 * saying is where the video settings and the
-				 * relay's own limits disagree. Silent when they
-				 * do not, which is the common case. */
-				setBanner(outputMismatch(), "warn", QString(), nullptr);
+				/* Nothing is wrong, so what remains worth
+				 * saying: a connected account the plugin has
+				 * to keep working around, or where the video
+				 * settings and the relay's limits disagree.
+				 * Silent when neither applies, which is the
+				 * common case. */
+				const QString note = connectedAccountNote();
+				setBanner(!note.isEmpty() ? note : outputMismatch(), "warn", QString(), nullptr);
 			}
 			break;
 		default:
@@ -251,11 +281,16 @@ void RelayDock::refreshUi()
 /* The per-second tick exists for the live elapsed clock and for the settings
  * changes OBS raises no event for. Neither matters while nothing is on screen,
  * so a closed or hidden dock costs nothing. Going live is covered without it:
- * STREAMING_STARTING refreshes the token and repairs the key. */
+ * STREAMING_STARTING refreshes the token and repairs the key.
+ *
+ * Coming back into view is also the moment to catch up on anything that
+ * changed while the dock was away, which is what makes the target's age
+ * worth checking at all: without this, a dock left open would sit on a
+ * cached ingest target until the next stream start. */
 void RelayDock::showEvent(QShowEvent *event)
 {
 	QWidget::showEvent(event);
-	refreshTick();
+	refreshAll();
 	tick->start();
 }
 
@@ -272,13 +307,17 @@ void RelayDock::refreshTick()
 	const QString signature = environmentSignature();
 	if (signature != lastEnvironment) {
 		lastEnvironment = signature;
-		repairEmptyKey();
+		repairStreamKey();
 		refreshUi();
 	}
 
 	if (current == State::Live || current == State::Protected || current == State::Ending) {
 		timerLabel->setText(elapsedText());
-		if (current == State::Protected)
+		/* Only the countdown is redrawn, and only when the countdown is
+		 * what is on screen. Something more urgent can outrank it, and
+		 * writing over that once a second would leave the other
+		 * banner's styling wrapped around this text. */
+		if (current == State::Protected && bannerKind == QLatin1String("protect"))
 			banner->setText(protectedBannerText());
 
 		auth->ensureFreshToken();
@@ -290,7 +329,11 @@ void RelayDock::refreshAll()
 	destOffline = false;
 	destinations->refresh();
 	status->pollNow();
-	if (auth->signedIn() && !targetFetched)
+	/* The ingest key can be rotated behind a cached target's back, from
+	 * the web or from another install, so age caps how long one is
+	 * trusted between the re-reads every stream start does anyway. */
+	const qint64 age = QDateTime::currentMSecsSinceEpoch() - targetFetchedAtMs;
+	if (auth->signedIn() && (!targetFetched || age > kTargetMaxAgeMs))
 		fetchIngestTarget(nullptr);
 	refreshUi();
 }
@@ -309,37 +352,6 @@ void RelayDock::openAddDialog()
 	DestinationDialog dialog(auth, destinations, this);
 	dialog.exec();
 	destinations->refresh();
-}
-
-/* End the broadcast from the dock. OBS can still believe it is connected
- * while the relay has fallen back to the standby screen, so stop the output
- * first and let the streaming-stopping handler end the session in the usual
- * order; only end directly when OBS has already stopped. */
-void RelayDock::endEverything()
-{
-	if (obs_frontend_streaming_active()) {
-		obs_frontend_streaming_stop();
-		return;
-	}
-	status->requestEnd();
-}
-
-void RelayDock::endStreamHotkey()
-{
-	if (current == State::Live || current == State::Protected)
-		endEverything();
-}
-
-void RelayDock::firstRunShow()
-{
-	if (firstRunHandled)
-		return;
-	firstRunHandled = true;
-
-	if (dsrReadFlag(kFirstRunFlag))
-		return;
-	dsrWriteFlag(kFirstRunFlag, true);
-	showDockWindow();
 }
 
 void RelayDock::showDockWindow()
@@ -369,66 +381,6 @@ void RelayDock::resizeEvent(QResizeEvent *event)
 	}
 }
 
-void RelayDock::handleFrontendEvent(enum obs_frontend_event event)
-{
-	switch (event) {
-	case OBS_FRONTEND_EVENT_FINISHED_LOADING:
-		firstRunShow();
-		refreshAll();
-		break;
-	case OBS_FRONTEND_EVENT_STREAMING_STARTING:
-		auth->ensureFreshToken();
-		/* Last moment the key can still be put right, and the only one
-		 * that does not depend on the dock being on screen. */
-		repairEmptyKey();
-		break;
-	case OBS_FRONTEND_EVENT_STREAMING_STARTED:
-		localStreamStartMs = QDateTime::currentMSecsSinceEpoch();
-		status->setLivePolling(true);
-		status->pollNow();
-		refreshUi();
-		break;
-	case OBS_FRONTEND_EVENT_STREAMING_STOPPING:
-		/* The single most important call in the plugin: without it the
-		 * relay reads a stop as a connection drop and holds every
-		 * platform on the standby slate for the grace window. */
-		if (auth->signedIn())
-			status->requestEnd();
-		break;
-	case OBS_FRONTEND_EVENT_STREAMING_STOPPED:
-		localStreamStartMs = 0;
-		status->setLivePolling(false);
-		/* Backstop for a missed STOPPING event, and the poll that
-		 * clears the Ending state. */
-		if (auth->signedIn() && status->hasSession() && !status->ending())
-			status->requestEnd();
-		/* requestEnd polls as soon as the end call is acknowledged, so
-		 * nothing needs to wait a fixed interval for confirmation. */
-		refreshUi();
-		break;
-	case OBS_FRONTEND_EVENT_PROFILE_CHANGED:
-		refreshUi();
-		break;
-	case OBS_FRONTEND_EVENT_EXIT:
-		if (auth->signedIn() && obs_frontend_streaming_active() && !status->ending())
-			status->requestEnd();
-		if (status->ending()) {
-			/* Give the end call a bounded window to reach the
-			 * server before the process goes away. */
-			QEventLoop loop;
-			QTimer::singleShot(1500, &loop, &QEventLoop::quit);
-			connect(status, &RelayStatus::endPosted, &loop, &QEventLoop::quit);
-			loop.exec();
-		}
-		break;
-	default:
-		break;
-	}
-}
-
-/* Cheap fingerprint of everything outside the plugin that changes what the
- * dock should render: where the stream output points, which key it carries,
- * and whether OBS has a connected account. All local reads, no network. */
 void RelayDock::openEditDialog(const QString &destinationId)
 {
 	for (const DsrDestination &dest : destinations->list()) {
@@ -439,21 +391,4 @@ void RelayDock::openEditDialog(const QString &destinationId)
 		destinations->refresh();
 		return;
 	}
-}
-
-bool RelayDock::eventFilter(QObject *watched, QEvent *event)
-{
-	if (event->type() == QEvent::MouseButtonRelease) {
-		QWidget *row = qobject_cast<QWidget *>(watched);
-		if (row) {
-			const QVariant id = row->property("destId");
-			QMouseEvent *me = static_cast<QMouseEvent *>(event);
-			if (id.isValid() && me->button() == Qt::LeftButton &&
-			    row->rect().contains(me->position().toPoint())) {
-				openEditDialog(id.toString());
-				return true;
-			}
-		}
-	}
-	return QWidget::eventFilter(watched, event);
 }

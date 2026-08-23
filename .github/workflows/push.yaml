@@ -77,10 +77,11 @@ jobs:
           root_dir="$(pwd)"
           commit_hash="${GITHUB_SHA:0:9}"
 
+          # Windows is the only shipping target; see the README. The macOS
+          # and Ubuntu jobs still build for CI signal, but their artifacts do
+          # not go into a release until they are actually supported.
           variants=(
             'windows-x64;zip|exe'
-            'macos-universal;tar.xz|pkg'
-            'ubuntu-24.04-x86_64;tar.xz|deb|ddeb'
             'sources;tar.xz'
           )
 

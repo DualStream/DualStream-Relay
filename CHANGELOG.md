@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.2.1
+
+### Fixed
+
+- Streams no longer fail with an endless reconnect loop when OBS has a
+  connected platform account. OBS quietly swaps in that account's own stream
+  key at every stream start; the relay key is now put back before the
+  connection opens, every time. The panel still recommends disconnecting the
+  account, but it no longer breaks streaming.
+- Your relay ingest details are re-checked at every stream start and
+  refreshed when they have been sitting unused, so a key rotated from the
+  website no longer strands OBS on the old one.
+- Going live over SRT starts a few seconds sooner. The plugin was asking for
+  a larger network recovery window than the relay uses, which delayed every
+  stream start by that difference; it now follows the relay's window.
+- While you are live, a brief hiccup reaching DualStream no longer flips the
+  whole panel to Offline. Your stream was never affected; now the panel says
+  so too, in a note, while staying on Live.
+- If a stream ends on an error, the panel now says what happened, in plain
+  words, with the exact error underneath, instead of returning to Ready as
+  if nothing happened. The same detail lands in Copy diagnostics.
+- The panel now warns before you go live when your encoder is set to a video
+  or audio format the relay cannot take, in simple output mode as well as
+  advanced. Previously the stream connected fine and reached no one.
+- If your sign-in expires, the panel asks you to sign in again instead of
+  silently signing you out and forgetting the stream keys you had typed in.
+  Those now survive until you sign out yourself.
+- The settings saved by "Restore previous settings" are now encrypted on
+  disk, the same way as everything else the plugin stores, and are no longer
+  overwritten once taken.
+
 ## 0.2.0
 
 ### Try it without a subscription

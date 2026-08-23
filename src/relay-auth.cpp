@@ -23,7 +23,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "relay-auth-internal.hpp"
 #include "relay-secrets.hpp"
 
-#include <QCoreApplication>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QFile>
@@ -32,12 +31,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QSaveFile>
 #include <QUrl>
 
-#include <curl/curl.h>
-
-#include <mutex>
-#include <string>
-#include <thread>
-
 #include <obs-module.h>
 #include <util/platform.h>
 #include <plugin-support.h>
@@ -45,104 +38,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 namespace {
 
 const char *kDefaultBase = "https://www.dualstream.gg";
-const long kConnectTimeoutMs = 5000;
-const long kRequestTimeoutMs = 15000;
 
 /* Fall back to the legacy JWT lifetime when the server does not say how
  * long the token lives. Refreshing at half-life keeps a margin either way. */
 const qint64 kFallbackTokenLifeSec = 7 * 24 * 3600;
-
-void ensureCurlInit()
-{
-	/* No matching curl_global_cleanup on purpose: request threads may
-	 * still be draining when the module unloads, and OBS keeps libcurl
-	 * resident for the life of the process anyway. */
-	static std::once_flag once;
-	std::call_once(once, []() { curl_global_init(CURL_GLOBAL_DEFAULT); });
-}
-
-size_t appendBody(char *data, size_t size, size_t nmemb, void *userdata)
-{
-	auto *out = static_cast<std::string *>(userdata);
-	out->append(data, size * nmemb);
-	return size * nmemb;
-}
-
-struct DsrHttpReply {
-	long status = 0;
-	bool transportOk = false;
-	std::string body;
-};
-
-DsrHttpReply runRequest(const QByteArray &verb, const QByteArray &url, const QByteArray &payload, bool hasBody,
-			const QByteArray &bearer)
-{
-	DsrHttpReply reply;
-
-	CURL *curl = curl_easy_init();
-	if (!curl)
-		return reply;
-
-	struct curl_slist *headers = nullptr;
-	headers = curl_slist_append(headers, "Accept: application/json");
-	if (hasBody)
-		headers = curl_slist_append(headers, "Content-Type: application/json");
-	if (!bearer.isEmpty()) {
-		headers = curl_slist_append(headers, ("Authorization: " + bearer).constData());
-		/* Some deployments strip the Authorization header; the API
-		 * reads this fallback header first. */
-		headers = curl_slist_append(headers, ("X-Auth-Token: " + bearer).constData());
-	}
-
-	const QByteArray userAgent = "obs-dualstream-relay/" + QByteArray(PLUGIN_VERSION);
-
-	curl_easy_setopt(curl, CURLOPT_URL, url.constData());
-	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-	curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent.constData());
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendBody);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &reply.body);
-	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, kConnectTimeoutMs);
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, kRequestTimeoutMs);
-	/* Required for timeouts on threads: signal-based DNS timeout handling
-	 * is not thread safe. */
-	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-
-	/* The bearer travels as a custom header, and curl repeats custom headers
-	 * to a redirect target whatever host or scheme it names. Redirects are
-	 * therefore refused outright rather than merely capped: the API does not
-	 * use them, and the token never leaves the host the user configured. */
-	curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
-
-	/* curl's default protocol set is far wider than this needs, and includes
-	 * schemes that read local files. */
-#if LIBCURL_VERSION_NUM >= 0x075500
-	curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https,http");
-#else
-	curl_easy_setopt(curl, CURLOPT_PROTOCOLS, (long)(CURLPROTO_HTTPS | CURLPROTO_HTTP));
-#endif
-
-	/* Both default to on, and both are stated anyway: a build linking a
-	 * differently configured libcurl must not quietly stop verifying. */
-	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
-
-	if (verb == "POST") {
-		curl_easy_setopt(curl, CURLOPT_POST, 1L);
-		curl_easy_setopt(curl, CURLOPT_COPYPOSTFIELDS, hasBody ? payload.constData() : "");
-	} else if (verb != "GET") {
-		curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, verb.constData());
-		if (hasBody)
-			curl_easy_setopt(curl, CURLOPT_COPYPOSTFIELDS, payload.constData());
-	}
-
-	const CURLcode result = curl_easy_perform(curl);
-	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &reply.status);
-	reply.transportOk = result == CURLE_OK && reply.status > 0;
-
-	curl_slist_free_all(headers);
-	curl_easy_cleanup(curl);
-	return reply;
-}
 
 } // namespace
 
@@ -168,7 +67,6 @@ qint64 dsrPickInt(const QJsonObject &obj, std::initializer_list<const char *> ke
 
 RelayAuth::RelayAuth(QObject *parent) : QObject(parent)
 {
-	ensureCurlInit();
 	pollTimer.setInterval(kDefaultPollIntervalMs);
 	connect(&pollTimer, &QTimer::timeout, this, &RelayAuth::pollPairing);
 	loadState();
@@ -278,29 +176,18 @@ void RelayAuth::request(const QByteArray &verb, const QString &path, const QJson
 	const QByteArray payload = hasBody ? QJsonDocument(body).toJson(QJsonDocument::Compact) : QByteArray();
 	const QByteArray bearer = accessToken.isEmpty() ? QByteArray() : ("Bearer " + accessToken.toUtf8());
 
-	/* One short-lived thread per request; the call volume here is a poll
-	 * every few seconds at most. The URL, payload and bearer are captured
-	 * by value so the worker never touches members off the UI thread.
-	 * Delivery is marshalled through the application object because this
-	 * object can be destroyed while a request is in flight; the QPointer
-	 * is only dereferenced back on the UI thread. */
+	/* The URL, payload and bearer are captured by value so the worker
+	 * never touches members off the UI thread. The completion arrives back
+	 * on the UI thread; the QPointer covers this object being destroyed
+	 * while the request is in flight. */
 	QPointer<RelayAuth> self(this);
-	std::thread worker([self, verb, path, body, hasBody, handler, retried, url, payload, bearer]() {
-		const DsrHttpReply reply = runRequest(verb, url, payload, hasBody, bearer);
-		const QByteArray rawBody = QByteArray(reply.body.data(), int(reply.body.size()));
-		const int status = int(reply.status);
-		const bool transportOk = reply.transportOk;
-		QMetaObject::invokeMethod(
-			QCoreApplication::instance(),
-			[self, status, transportOk, rawBody, verb, path, body, hasBody, handler, retried]() {
-				if (!self)
-					return;
-				self->finishRequest(status, transportOk, rawBody, verb, path, body, hasBody, handler,
-						    retried);
-			},
-			Qt::QueuedConnection);
-	});
-	worker.detach();
+	http.send(verb, url, payload, hasBody, bearer,
+		  [self, verb, path, body, hasBody, handler, retried](const DsrHttpReply &reply) {
+			  if (!self)
+				  return;
+			  self->finishRequest(reply.status, reply.transportOk, reply.body, verb, path, body, hasBody,
+					      handler, retried);
+		  });
 }
 
 void RelayAuth::finishRequest(int status, bool transportOk, const QByteArray &rawBody, const QByteArray &verb,
@@ -312,14 +199,26 @@ void RelayAuth::finishRequest(int status, bool transportOk, const QByteArray &ra
 	result.body = QJsonDocument::fromJson(rawBody).object();
 
 	if (status == 401 && !retried && !refreshValue.isEmpty()) {
-		refreshToken([this, verb, path, body, hasBody, handler, result](bool ok) {
-			if (ok)
+		refreshToken([this, verb, path, body, hasBody, handler, result](bool ok) mutable {
+			if (ok) {
 				request(verb, path, body, hasBody, handler, true);
-			else if (handler)
+				return;
+			}
+			/* finishRefresh clears the credential only when the
+			 * server rejected it outright, so an empty one here is
+			 * what distinguishes a finished session from a refresh
+			 * that never arrived. */
+			result.sessionDead = refreshValue.isEmpty();
+			if (handler)
 				handler(result);
 		});
 		return;
 	}
+
+	/* A 401 while holding a token and with nothing left to refresh with is
+	 * the same finished session, reached without a refresh attempt. */
+	if (status == 401 && !accessToken.isEmpty() && refreshValue.isEmpty())
+		result.sessionDead = true;
 
 	if (handler)
 		handler(result);
@@ -387,21 +286,11 @@ void RelayAuth::refreshToken(std::function<void(bool)> done)
 	const QByteArray payload = QJsonDocument(body).toJson(QJsonDocument::Compact);
 
 	QPointer<RelayAuth> self(this);
-	std::thread worker([self, url, payload]() {
-		const DsrHttpReply reply = runRequest("POST", url, payload, true, QByteArray());
-		const QByteArray rawBody = QByteArray(reply.body.data(), int(reply.body.size()));
-		const int status = int(reply.status);
-		const bool transportOk = reply.transportOk;
-		QMetaObject::invokeMethod(
-			QCoreApplication::instance(),
-			[self, status, transportOk, rawBody]() {
-				if (!self)
-					return;
-				self->finishRefresh(status, transportOk, rawBody);
-			},
-			Qt::QueuedConnection);
+	http.send("POST", url, payload, true, QByteArray(), [self](const DsrHttpReply &reply) {
+		if (!self)
+			return;
+		self->finishRefresh(reply.status, reply.transportOk, reply.body);
 	});
-	worker.detach();
 }
 
 void RelayAuth::finishRefresh(int status, bool transportOk, const QByteArray &rawBody)
@@ -452,5 +341,19 @@ void RelayAuth::signOut()
 	/* The destinations belonged to the account that just left, so the keys
 	 * cached for them do not survive it. */
 	dsrSecretForgetAll();
+	emit stateChanged();
+}
+
+void RelayAuth::sessionExpired()
+{
+	if (accessToken.isEmpty() && refreshValue.isEmpty())
+		return;
+
+	obs_log(LOG_WARNING, "session tokens rejected and not refreshable; sign-in required");
+	accessToken.clear();
+	refreshValue.clear();
+	issuedAt = 0;
+	expiresIn = 0;
+	saveState();
 	emit stateChanged();
 }

@@ -111,6 +111,12 @@ currently set to. DualStream is the real home for these. Encrypted the same
 way, deleted when you remove that destination, and wiped completely when you
 sign out.
 
+**Your previous streaming settings.** When the plugin points OBS at the
+relay, it first saves what your stream output pointed at before, so
+"Restore previous settings" can always take you back. That saved copy can
+include the stream key you had set, so it is encrypted the same way, and it
+is deleted when you restore.
+
 Nothing else is saved, and nothing is sent anywhere except to DualStream.
 
 ## For developers

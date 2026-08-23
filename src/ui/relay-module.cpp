@@ -27,6 +27,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <QMetaObject>
 
+#include "../relay-output.h"
 #include "../vertical-canvas.hpp"
 #include "relay-dock.hpp"
 #include "vertical-dock.hpp"
@@ -95,6 +96,12 @@ extern "C" void dsr_frontend_shutdown(void)
 		endHotkeyId = OBS_INVALID_HOTKEY_ID;
 	}
 	obs_frontend_remove_event_callback(frontend_event_cb, nullptr);
+	/* Normally disarmed on the exit event; repeated here so a missed event
+	 * can never leave a signal handler connected to a dying output. The
+	 * clear releases the captured error text, which would otherwise show
+	 * up in libobs's shutdown leak count. */
+	dsr_stream_watch_disarm();
+	dsr_stream_watch_clear();
 	/* The dock widgets belong to the OBS main window and are destroyed
 	 * with it. The manager holds libobs references, so it goes now. */
 	delete verticalManager;

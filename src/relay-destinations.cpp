@@ -47,7 +47,7 @@ void RelayDestinations::refresh()
 
 	auth->get(QStringLiteral("/api/relay/destinations"), [this](const DsrApiResult &result) {
 		if (!result.ok()) {
-			emit loadFailed(result.status, result.code(), result.transportOk);
+			emit loadFailed(result.status, result.code(), result.transportOk, result.sessionDead);
 			return;
 		}
 

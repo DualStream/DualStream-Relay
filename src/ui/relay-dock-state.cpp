@@ -39,13 +39,26 @@ RelayDock::State RelayDock::computeState() const
 		return State::Lapsed;
 	if (status->ending())
 		return State::Ending;
+
+	const bool protectedNow = status->sessionStatus() == QLatin1String("protected");
+
+	/* While OBS is streaming, its own state outranks a status outage.
+	 * Offline only means the status API cannot be reached, and that is a
+	 * side note next to a stream that is still running: a pill flipping
+	 * to Offline mid-stream reads as the stream failing when nothing
+	 * about it has changed. The banner carries the outage instead. */
+	if (obs_frontend_streaming_active())
+		return protectedNow ? State::Protected : State::Live;
+
+	/* OBS is not streaming, so everything left rests on what the relay
+	 * last said, and that is only worth believing while the relay can
+	 * still be asked. Trusting a cached session through an outage is how
+	 * the dock ends up counting a clock on a stream that already died. */
 	if (destOffline || !status->reachable())
 		return State::Offline;
-	if (status->sessionStatus() == QLatin1String("protected"))
+	if (protectedNow)
 		return State::Protected;
-
-	const bool streaming = obs_frontend_streaming_active();
-	if (streaming || status->hasSession())
+	if (status->hasSession())
 		return State::Live;
 	if (!destinations->loaded())
 		return State::Checking;
@@ -128,21 +141,101 @@ bool RelayDock::keyMismatch() const
 	return mismatch;
 }
 
-/* Refill our own key when the stream output already points at the relay but
- * carries no key. Nothing of the user's is being replaced in that case, and
- * it is the state OBS leaves behind after disconnecting an account. */
-void RelayDock::repairEmptyKey()
+/* Put the stream key right when something outside the plugin has changed it.
+ * Two things do: OBS's connected accounts write their own key into the
+ * service at every stream start, and the relay mints a fresh ingest key when
+ * the account lapses and comes back. Either way the profile ends up pointing
+ * at the relay with a key the relay refuses, the publish fails, and OBS
+ * retries into a wall with no explanation.
+ *
+ * What may be written depends on where the stream is, which is why the
+ * phase is consulted rather than any single flag. The output's connect
+ * thread re-reads the service on every attempt with no lock on either side,
+ * and replacing the service object frees the one it holds, so once the
+ * output has it nothing here writes: the stream is taken down instead and
+ * the stopped handler brings it back on the corrected key. */
+RelayDock::StreamPhase RelayDock::streamPhase() const
+{
+	/* The output is the authority on whether it holds the service, and it
+	 * says so from the moment it takes one, connect attempt included. The
+	 * frontend's own answer only turns true once a connection succeeded,
+	 * so it is kept alongside as a backstop for a stream this dock never
+	 * saw begin, never as the primary test. */
+	if (dsr_stream_output_engaged() || obs_frontend_streaming_active())
+		return StreamPhase::Running;
+	if (streamStarting)
+		return StreamPhase::Starting;
+	return StreamPhase::Idle;
+}
+
+void RelayDock::repairStreamKey()
 {
 	if (!targetFetched || !dsr_route_is_relay())
 		return;
-	char *key = dsr_route_current_key();
-	const bool empty = key == NULL;
-	bfree(key);
-	if (!empty)
-		return;
 
-	obs_log(LOG_INFO, "stream key was empty; filling in the relay key");
-	dsr_route_apply(targetServer.toUtf8().constData(), targetKey.toUtf8().constData());
+	char *serverRaw = dsr_route_current_server();
+	char *keyRaw = dsr_route_current_key();
+	const QString server = QString::fromUtf8(serverRaw ? serverRaw : "");
+	const QString key = QString::fromUtf8(keyRaw ? keyRaw : "");
+	bfree(serverRaw);
+	bfree(keyRaw);
+
+	/* Identity is the endpoint, not the whole URL: the latency figures in
+	 * the query change when the relay retunes its window, and a profile
+	 * routed by an older build still carries the old figures. The key is
+	 * what publishing stands or falls on. */
+	const QString serverBase = server.section(QLatin1Char('?'), 0, 0);
+	const QString targetBase = targetServer.section(QLatin1Char('?'), 0, 0);
+
+	/* Which key belongs to the server the profile is on: the SRT streamid
+	 * for the prepared SRT target, the plain ingest key for a profile
+	 * still publishing over RTMPS. */
+	QString wanted;
+	if (!targetBase.isEmpty() && serverBase == targetBase)
+		wanted = targetKey;
+	else if (!rtmpsKey.isEmpty() && server.startsWith(QLatin1String("rtmps://")))
+		wanted = rtmpsKey;
+
+	const StreamPhase phase = streamPhase();
+
+	if (wanted.isEmpty()) {
+		/* The server names the relay but matches no target this plugin
+		 * knows, an older ingest shape. Idle with no key at all, the
+		 * full route can be reapplied; that is the state OBS leaves
+		 * behind after disconnecting an account. */
+		if (phase == StreamPhase::Idle && key.isEmpty()) {
+			obs_log(LOG_INFO, "stream key was empty; filling in the relay key");
+			dsr_route_apply(targetServer.toUtf8().constData(), targetKey.toUtf8().constData());
+		}
+		return;
+	}
+
+	if (key == wanted) {
+		/* Key right, URL parameters stale: an older build's latency
+		 * figures. Only replaced while idle, because replacing the
+		 * service destroys the one the output is holding. A stream
+		 * already under way keeps working on the old figures. */
+		if (phase == StreamPhase::Idle && server != targetServer)
+			dsr_route_apply(targetServer.toUtf8().constData(), targetKey.toUtf8().constData());
+		return;
+	}
+
+	if (phase != StreamPhase::Running) {
+		/* Idle, or the starting event before the output has been given
+		 * the service. Setting the key in place is safe in both, and
+		 * at the starting event it is what the connection then uses. */
+		obs_log(LOG_INFO, "stream key no longer matches the relay ingest; putting it back");
+		dsr_route_set_key_inplace(wanted.toUtf8().constData());
+		return;
+	}
+
+	/* The output already holds the service and is publishing a key the
+	 * relay refuses. Nothing here can put that right: writing the service
+	 * now would change it under the thread reading it, and stopping the
+	 * stream on the user's behalf takes a decision that is theirs. The
+	 * stream fails on its own, and the banner that follows names the
+	 * reason and offers the repair. */
+	obs_log(LOG_WARNING, "stream carries a key the relay no longer accepts; it will be refused");
 }
 
 QString RelayDock::elapsedText() const
@@ -223,6 +316,9 @@ QString RelayDock::summaryText(State state) const
 	return statusPill->text();
 }
 
+/* Cheap fingerprint of everything outside the plugin that changes what the
+ * dock should render: where the stream output points, which key it carries,
+ * and whether OBS has a connected account. All local reads, no network. */
 QString RelayDock::environmentSignature() const
 {
 	char *server = dsr_route_current_server();
@@ -245,21 +341,12 @@ QString RelayDock::blockingSetupIssue() const
 	if (!dsr_route_is_relay())
 		return QString();
 
-	/* A connected account in OBS supplies its own stream key when
-	 * streaming starts, replacing the relay key on the way out. The
-	 * publish is then refused and OBS retries in a loop, so say exactly
-	 * what to do about it. */
-	char *account = dsr_get_connected_account();
-	if (account) {
-		const QString name = QString::fromUtf8(account);
-		bfree(account);
-		return QString(dsrText("Warning.ConnectedAccount")).arg(name);
-	}
-
-	/* The relay takes H.264 and nothing else. OBS will refuse to start on
-	 * AV1 by itself, but it will happily send HEVC over SRT, and the relay
-	 * has no use for it. Better to say so before the stream starts than to
-	 * let it go out and reach no one. */
+	/* The relay takes H.264 video with AAC audio and nothing else. OBS
+	 * will refuse to start on AV1 by itself, but it will happily send
+	 * HEVC or Opus over SRT, the relay's pipeline decodes neither, and
+	 * every platform then sits on the standby screen while OBS reports a
+	 * healthy stream. Better said before the stream starts than
+	 * discovered from the platforms. */
 	char *codec = dsr_get_stream_video_codec();
 	if (codec) {
 		const QString name = QString::fromUtf8(codec);
@@ -268,5 +355,76 @@ QString RelayDock::blockingSetupIssue() const
 			return QString(dsrText("Warning.VideoCodec")).arg(name.toUpper());
 	}
 
+	char *audio = dsr_get_stream_audio_codec();
+	if (audio) {
+		const QString name = QString::fromUtf8(audio);
+		bfree(audio);
+		if (name != QLatin1String("aac"))
+			return QString(dsrText("Warning.AudioCodec")).arg(name.toUpper());
+	}
+
 	return QString();
+}
+
+/* A connected account overwrites the relay key at every stream start. The
+ * repair at the streaming-starting event undoes that, so it is a note rather
+ * than a blocker, but it stays worth a word: the account also points other
+ * OBS behavior (bandwidth tests, stream pages) at itself, and disconnecting
+ * it removes the tug of war entirely. */
+QString RelayDock::connectedAccountNote() const
+{
+	if (!dsr_route_is_relay())
+		return QString();
+
+	char *account = dsr_get_connected_account();
+	if (!account)
+		return QString();
+	const QString name = QString::fromUtf8(account);
+	bfree(account);
+	return QString(dsrText("Warning.ConnectedAccount")).arg(name);
+}
+
+/* Why the last stream ended, when it ended on an error. The stop code and
+ * the transport's own message are captured on the output's stop signal; the
+ * code maps to a plain sentence and the message rides along verbatim, since
+ * it is the most specific fact available. */
+QString RelayDock::streamStopNotice() const
+{
+	/* The watch follows whatever output OBS started, which is not always
+	 * one this plugin pointed anywhere. Reporting a stream that went
+	 * straight to a platform would name the relay for a refusal it had no
+	 * part in. */
+	if (!dsr_route_is_relay())
+		return QString();
+
+	int code = 0;
+	char *errorRaw = NULL;
+	if (!dsr_stream_last_stop(&code, &errorRaw))
+		return QString();
+
+	const QString detail = QString::fromUtf8(errorRaw ? errorRaw : "");
+	bfree(errorRaw);
+
+	const char *reasonKey;
+	switch (code) {
+	case OBS_OUTPUT_CONNECT_FAILED:
+	case OBS_OUTPUT_BAD_PATH:
+		reasonKey = "StreamStop.ConnectFailed";
+		break;
+	case OBS_OUTPUT_DISCONNECTED:
+		reasonKey = "StreamStop.Disconnected";
+		break;
+	case OBS_OUTPUT_INVALID_STREAM:
+	case OBS_OUTPUT_UNSUPPORTED:
+		reasonKey = "StreamStop.InvalidStream";
+		break;
+	case OBS_OUTPUT_ENCODE_ERROR:
+		reasonKey = "StreamStop.EncodeError";
+		break;
+	default:
+		reasonKey = "StreamStop.Error";
+		break;
+	}
+
+	return QString(dsrText("Warning.StreamStopped")).arg(dsrText(reasonKey)).arg(detail).trimmed();
 }

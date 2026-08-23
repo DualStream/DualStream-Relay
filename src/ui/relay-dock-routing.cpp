@@ -36,14 +36,13 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 void RelayDock::fetchIngestTarget(std::function<void(bool)> done)
 {
-	if (targetFetchInFlight) {
-		if (done)
-			done(false);
+	if (done)
+		targetFetchWaiters.append(std::move(done));
+	if (targetFetchInFlight)
 		return;
-	}
 	targetFetchInFlight = true;
 
-	auth->get(QStringLiteral("/api/relay/ingest-target"), [this, done](const DsrApiResult &result) {
+	auth->get(QStringLiteral("/api/relay/ingest-target"), [this](const DsrApiResult &result) {
 		targetFetchInFlight = false;
 		if (!result.ok()) {
 			/* This route is gated on entitlement, so its refusal is
@@ -54,8 +53,7 @@ void RelayDock::fetchIngestTarget(std::function<void(bool)> done)
 				lapsed = true;
 				refreshUi();
 			}
-			if (done)
-				done(false);
+			finishTargetFetch(false);
 			return;
 		}
 
@@ -66,6 +64,14 @@ void RelayDock::fetchIngestTarget(std::function<void(bool)> done)
 		const QJsonObject target = result.body.value(QStringLiteral("target")).toObject();
 		targetServer.clear();
 		targetKey.clear();
+
+		/* The RTMPS shape is kept alongside the SRT one whatever gets
+		 * routed: a profile sitting on the services.json entry
+		 * publishes over RTMPS, and repairing its key mid-flight needs
+		 * the key that transport takes. */
+		const QJsonObject rtmps = target.value(QStringLiteral("rtmps")).toObject();
+		rtmpsServer = rtmps.value(QStringLiteral("server")).toString();
+		rtmpsKey = rtmps.value(QStringLiteral("landscape")).toObject().value(QStringLiteral("key")).toString();
 
 		/* SRT first, whatever the response recommends. The relay takes
 		 * both, but RTMPS rides TCP: one lost segment stops the window
@@ -103,35 +109,79 @@ void RelayDock::fetchIngestTarget(std::function<void(bool)> done)
 		}
 
 		if (targetServer.isEmpty()) {
-			const QJsonObject rtmps = target.value(QStringLiteral("rtmps")).toObject();
-			targetServer = rtmps.value(QStringLiteral("server")).toString();
-			targetKey = rtmps.value(QStringLiteral("landscape"))
-					    .toObject()
-					    .value(QStringLiteral("key"))
-					    .toString();
+			targetServer = rtmpsServer;
+			targetKey = rtmpsKey;
 		}
 
 		targetFetched = !targetServer.isEmpty() && !targetKey.isEmpty();
+		if (targetFetched)
+			targetFetchedAtMs = QDateTime::currentMSecsSinceEpoch();
 		refreshUi();
-		if (done)
-			done(targetFetched);
+		finishTargetFetch(targetFetched);
 	});
+}
+
+/* Deliver the fetch outcome to everyone who asked while it ran. Drained
+ * before the callbacks run, so one of them starting a fresh fetch queues for
+ * that one rather than re-entering this list. */
+void RelayDock::finishTargetFetch(bool ok)
+{
+	const QVector<std::function<void(bool)>> waiters = std::move(targetFetchWaiters);
+	targetFetchWaiters.clear();
+	for (const auto &waiter : waiters) {
+		if (waiter)
+			waiter(ok);
+	}
+}
+
+void RelayDock::applyRoute()
+{
+	dsr_route_apply(targetServer.toUtf8().constData(), targetKey.toUtf8().constData());
+	/* The route is what the last failure was about, so its record stops
+	 * describing the current setup the moment it changes. */
+	dsr_stream_watch_clear();
+	offerEncoderTune();
+	refreshUi();
+}
+
+/* Both of these replace the streaming service outright, which frees the one
+ * the output is holding, so neither may run once a stream is under way.
+ * Nothing in the dock offers them then; the settings dialog can still be
+ * open across a stream start, so the refusal lives here where the phase is
+ * known rather than in each caller. */
+bool RelayDock::routeChangeAllowed()
+{
+	if (streamPhase() == StreamPhase::Idle)
+		return true;
+	obs_log(LOG_WARNING, "route change refused: a stream is in progress");
+	QMessageBox::information(this, dsrText("Dock.Title"), dsrText("Warning.RouteWhileLive"));
+	return false;
 }
 
 void RelayDock::routeToRelay()
 {
+	if (!routeChangeAllowed())
+		return;
+
 	if (targetFetched) {
-		dsr_route_apply(targetServer.toUtf8().constData(), targetKey.toUtf8().constData());
-		offerEncoderTune();
-		refreshUi();
+		applyRoute();
 		return;
 	}
+
+	/* One request at a time. The target can take as long as the request
+	 * timeout to arrive and nothing disables the button meanwhile, so
+	 * without this a second press would route again and ask about the
+	 * encoder a second time when the one answer lands. */
+	if (routeRequestPending)
+		return;
+	routeRequestPending = true;
+
 	fetchIngestTarget([this](bool ok) {
-		if (ok) {
-			dsr_route_apply(targetServer.toUtf8().constData(), targetKey.toUtf8().constData());
-			offerEncoderTune();
-			refreshUi();
-		}
+		routeRequestPending = false;
+		/* The answer can land after a stream has begun, so the phase
+		 * is asked again rather than trusted from the click. */
+		if (ok && streamPhase() == StreamPhase::Idle)
+			applyRoute();
 	});
 }
 
@@ -196,6 +246,10 @@ void RelayDock::offerEncoderTune()
 
 void RelayDock::restoreRoute()
 {
+	if (!routeChangeAllowed())
+		return;
+
 	dsr_route_restore();
+	dsr_stream_watch_clear();
 	refreshUi();
 }

@@ -4,12 +4,13 @@ The plugin is a thin client of the DualStream web API. It ships no secrets:
 sign-in uses a browser pairing flow designed for public clients, and nothing
 is embedded in the binary.
 
-Two things are kept under the OBS module config directory: the bearer and
-refresh tokens from sign-in, and the server and stream key of any custom
-RTMP destination, the latter only so the edit dialog can show what a
-destination is set to. Both are encrypted with the operating system's own
-facility where one is wired up. See the README for what that means per
-platform.
+Three things are kept under the OBS module config directory: the bearer and
+refresh tokens from sign-in; the server and stream key of any custom RTMP
+destination, only so the edit dialog can show what a destination is set to;
+and a snapshot of the streaming service the relay routing replaced, so
+"Restore previous settings" always has something to go back to. All three
+are encrypted with the operating system's own facility where one is wired
+up. See the README for what that means per platform.
 
 Base URL: `https://www.dualstream.gg`. The `DSRELAY_API_BASE` environment
 variable overrides it for development.

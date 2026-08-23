@@ -39,13 +39,15 @@ extern "C" {
  * URLs, so an SRT target always ends up on a custom service instead. */
 #define DSR_SERVICE_NAME "DualStream Relay"
 
-/* Retransmission window requested on the SRT link, in milliseconds. The
- * desktop app has published to the same relay over SRT with this window since
- * the transport work: round-trip time to the relay swings between 80 and
- * 440 ms, and a window under roughly nine times the peak leaves no room to
- * recover a lost packet before its play deadline. Multistreaming is not
- * interactive, so the base delay this adds costs nothing. */
-#define DSR_SRT_LATENCY_MS 4000
+/* Fallback retransmission window for the SRT link, in milliseconds. The
+ * relay's SRT front end runs a 2000 ms window: several round trips of
+ * headroom at the 80-440 ms RTTs real uplinks show, without the go-live
+ * delay and post-stall flush a larger window was measured to add. SRT
+ * negotiates the larger of the two sides' figures, so asking for more here
+ * would override the relay's choice for every stream from this plugin. A
+ * latency figure carried in the minted ingest URL wins over this constant;
+ * see dsr_srt_prepare. */
+#define DSR_SRT_LATENCY_MS 2000
 
 /* What the relay wants from the contribution encoder.
  *
@@ -61,7 +63,8 @@ extern "C" {
 /* The plugin never owns an output. It points the profile's streaming
  * service at the relay (with the user's consent) and restores the previous
  * service on request. A snapshot of the replaced service is kept in the
- * module config directory so routing is always reversible. */
+ * module config directory, sealed like every other stored key, so routing
+ * is always reversible. */
 
 bool dsr_route_is_relay(void);
 
@@ -79,6 +82,13 @@ char *dsr_route_current_key(void);
 bool dsr_srt_prepare(const char *relay_url, char **server_out, char **stream_id_out);
 
 bool dsr_route_apply(const char *server, const char *key);
+
+/* Replace only the stream key on the service the profile already uses,
+ * leaving the server and therefore the output's transport alone. This is the
+ * safe repair while a stream is starting or running: OBS re-reads the service
+ * on every connection attempt, so the corrected key is picked up without
+ * touching the output. */
+bool dsr_route_set_key_inplace(const char *key);
 
 /* True when the profile already uses the DualStream Relay services.json
  * entry, whatever key it currently carries. */
@@ -123,21 +133,31 @@ struct dsr_encoder_settings {
 bool dsr_encoder_read(struct dsr_encoder_settings *out);
 
 /* Codec the profile's streaming video encoder produces, as libobs names it
- * ("h264", "hevc", "av1"). NULL in simple output mode, where the stored value
- * is one of OBS's own shorthand names rather than an encoder id and mapping it
- * back would mean copying a table that changes between releases.
+ * ("h264", "hevc", "av1"). Advanced mode asks the encoder registry; simple
+ * mode reads the codec out of OBS's own shorthand encoder name. NULL when
+ * nothing usable is stored.
  *
- * The relay's contribution contract is H.264. Every encoder profile in the
- * desktop app pins H.264, the relay re-encodes to H.264, and its passthrough
- * mode forwards the contribution to the platforms untouched, where nothing
- * else is broadly playable. Caller bfree()s the result. */
+ * The relay's contribution contract is H.264 video with AAC audio. Its
+ * program pipeline parses exactly those two off the ingest; anything else
+ * connects fine and then decodes into nothing, leaving every platform on the
+ * standby screen. Caller bfree()s the result. */
 char *dsr_get_stream_video_codec(void);
+
+/* Codec of the streaming audio track ("aac", "opus"), same contract and
+ * ownership as the video variant. */
+char *dsr_get_stream_audio_codec(void);
+
+/* Rate control of the streaming video encoder ("CBR", "CQP", ...). Simple
+ * mode always builds CBR; advanced mode reads the stored choice. NULL when
+ * nothing is stored, which means the encoder's own default. Caller bfree()s
+ * the result. */
+char *dsr_encoder_rate_control(void);
 
 /* Write the encoder settings back. Pass -1 for keyint_sec to leave it alone.
  * Only bitrate and keyint_sec are ever written: both carry the same name,
  * type and meaning in obs-x264, obs-nvenc, obs-qsv11 and the AMF encoder.
- * Rate control deliberately is not written, because those same four disagree
- * on how its values are spelled. */
+ * Rate control deliberately is not written, because a profile deliberately
+ * set to something other than CBR is a choice this plugin only warns about. */
 bool dsr_encoder_write(int video_bitrate_kbps, int keyint_sec);
 
 /* Simple-output video bitrate in kbps. Returns 0 when the profile uses
@@ -147,10 +167,27 @@ int dsr_get_configured_bitrate_kbps(void);
 
 /* Name of the streaming service OBS has a connected account for ("Twitch",
  * "YouTube - RTMPS", "Restream.io"), or NULL when none. A connected account
- * supplies its own stream key at go-live, which silently replaces whatever
- * key the service holds, so relay routing cannot work while one is active.
- * Caller bfree()s the result. */
+ * writes its own stream key into the service at every stream start; the
+ * repair at the streaming-starting event puts the relay key back. Caller
+ * bfree()s the result. */
 char *dsr_get_connected_account(void);
+
+/* What the streaming output is doing, taken from its own signals. Arm when a
+ * stream starts, disarm when it ends or OBS exits, clear before each start so
+ * an old failure does not linger.
+ *
+ * dsr_stream_output_engaged is true from the moment the output takes the
+ * streaming service until it reports being finished with it, the connect
+ * attempt included. The service must not be written while it is true. A
+ * start that fails before the output takes the service never sets it.
+ *
+ * dsr_stream_last_stop reports the most recent abnormal stop; the error
+ * string is bstrdup()d for the caller and may be NULL. */
+void dsr_stream_watch_arm(void);
+void dsr_stream_watch_disarm(void);
+void dsr_stream_watch_clear(void);
+bool dsr_stream_output_engaged(void);
+bool dsr_stream_last_stop(int *code, char **error);
 
 #ifdef __cplusplus
 }

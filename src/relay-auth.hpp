@@ -28,25 +28,30 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <functional>
 
+#include "relay-http.hpp"
+
 /* Result of one API call. transportOk is false when the request never
  * reached the server at all; the dock renders that as the Offline state
- * instead of treating it like a server-side rejection. */
+ * instead of treating it like a server-side rejection.
+ *
+ * sessionDead separates the two ways a 401 can end. The session is over only
+ * when the refresh credential was itself rejected, or when there was none
+ * left to try. A refresh that simply could not be delivered leaves the
+ * credential intact and this false, so a dropped packet is never mistaken
+ * for a sign-out. */
 struct DsrApiResult {
 	int status = 0;
 	bool transportOk = false;
+	bool sessionDead = false;
 	QJsonObject body;
 
 	bool ok() const { return transportOk && status >= 200 && status < 300; }
 	QString code() const { return body.value(QStringLiteral("code")).toString(); }
 };
 
-/* Token store plus the HTTP layer every other component calls through.
- *
- * Transport is libcurl, not Qt Network: OBS ships libcurl (with TLS built
- * in) on every platform but does not ship Qt's TLS backend plugins, so
- * QNetworkAccessManager cannot open an https connection inside OBS. Each
- * request runs on its own short-lived thread and the result is delivered
- * back on the UI thread.
+/* Token store plus the HTTP surface every other component calls through.
+ * The transport itself lives in relay-http.cpp; results are delivered back
+ * on the UI thread.
  *
  * Sign-in is browser pairing only: the plugin shows a short code, the user
  * approves it at dualstream.gg, and the plugin polls for a token. No
@@ -71,6 +76,12 @@ public:
 	void startPairing();
 	void cancelPairing();
 	void signOut();
+
+	/* The session died under us: a request came back 401 and the refresh
+	 * credential could not bring it back. Unlike signOut this keeps the
+	 * cached destination keys, because the account has not changed, only
+	 * the session, and pairing again brings the same account back. */
+	void sessionExpired();
 
 	/* Refresh ahead of expiry while a stream is running, so the end-stream
 	 * call never lands with a stale token. A no-op for device tokens, which
@@ -101,6 +112,8 @@ private:
 	void finishPairing(bool ok, const QString &errorKey);
 	QString apiBase() const;
 	QString statePath() const;
+
+	DsrHttpClient http;
 
 	QString accessToken;
 	QString refreshValue;

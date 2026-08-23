@@ -323,5 +323,10 @@ void RelayDock::applyDirectDestination()
 	if (stored.isEmpty() || stored.isPortrait())
 		return;
 
+	/* Same rule as every other route change: replacing the streaming
+	 * service destroys the one a running output is holding. */
+	if (!routeChangeAllowed())
+		return;
+
 	dsr_route_apply(stored.url.toUtf8().constData(), stored.key.toUtf8().constData());
 }
