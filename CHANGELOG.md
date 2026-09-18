@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.3.0
+
+### Twitch dual format
+
+- A Twitch destination can now be set to dual format. Your landscape and
+  vertical scenes go out to Twitch as one Enhanced Broadcasting session, with
+  every rendition Twitch asks for encoded here and carried to the relay on
+  one connection. Turn on the vertical canvas, set the Twitch destination to
+  "dual format", and press Start Streaming as always.
+- The relay is now a streaming service of its own in OBS rather than a custom
+  server. OBS applies the relay's keyframe interval and bitrate cap at every
+  stream start the way it does for any listed platform, refuses an encoder
+  the relay cannot take before the stream begins, and a connected platform
+  account can no longer overwrite the relay stream key. Profiles routed by
+  an earlier release move over on their own.
+
+### Fixed
+
+- A profile that once had Enhanced Broadcasting turned on for Twitch could
+  not start a relay stream at all: OBS refused every Start Streaming press
+  with a missing configuration dialog. The switch is now turned off for a
+  relay profile, and the panel says when a restart is needed for it to take.
+- The panel no longer says the relay tops out at 1080p and re-encodes what
+  it receives. It carries what you send; the notes now give the relay's real
+  figures, and a keyframe interval or bitrate the relay would refuse is
+  called out before the stream starts rather than discovered as a quality
+  drop mid-stream.
+- The relay panel now says when the mobile side of your stream is off, or on
+  with nothing taking it, and can turn the vertical canvas on from there.
+- Vertical layouts remember the canvas size they were made for and are
+  scaled to a new one, when the relay's portrait size changes, the next
+  time no output is running.
+
 ## 0.2.1
 
 ### Fixed

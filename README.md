@@ -92,6 +92,12 @@ a 9:16 counterpart of every scene. It shares the same cameras and sources as
 your normal scenes, but you arrange them separately, and you choose which
 ones show up. It is sent alongside your normal stream, not instead of it.
 
+**Twitch in both shapes at once.** With the vertical canvas on, set your
+Twitch destination to dual format and Twitch gets your wide stream and your
+tall one in the same broadcast, so viewers holding a phone upright see the
+tall one. Every version Twitch asks for is encoded on your machine and sent
+on the one connection you already have to DualStream.
+
 **You never type your password into OBS.** Signing in happens in your
 browser.
 
@@ -156,7 +162,9 @@ its out-of-bounds shading and spacing guides exactly the way the main OBS
 preview does: `data/images/overflow.png` and
 `data/effects/striped-line.effect`. They are Copyright (C) OBS Studio
 contributors, GPL-2.0-or-later, and are used here under the same license as
-the rest of this project.
+the rest of this project. The build also carries a copy of OBS Studio's
+`cmake/finders/FindLibsrt.cmake`, with one addition so it finds the SRT
+headers where the prebuilt dependencies keep them, under the same terms.
 
 ## Trademarks
 
