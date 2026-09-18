@@ -68,6 +68,15 @@ public:
 	bool signedIn() const { return !accessToken.isEmpty(); }
 	QString email() const { return accountEmail; }
 	QString webUrl(const QString &path) const;
+	QString apiBase() const;
+
+	/* The Authorization header value for the current session, empty when
+	 * signed out. For code that has to make its own request, off the UI
+	 * thread, with a copy taken here first. */
+	QByteArray bearerHeader() const
+	{
+		return accessToken.isEmpty() ? QByteArray() : ("Bearer " + accessToken.toUtf8());
+	}
 
 	bool pairing() const { return !deviceCode.isEmpty(); }
 	QString pairingCode() const { return userCode; }
@@ -110,7 +119,6 @@ private:
 	void saveState();
 	void pollPairing();
 	void finishPairing(bool ok, const QString &errorKey);
-	QString apiBase() const;
 	QString statePath() const;
 
 	DsrHttpClient http;

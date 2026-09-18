@@ -201,9 +201,9 @@ void VerticalPreview::drawCallback(void *param, uint32_t cx, uint32_t cy)
 	if (!self->canvas || cx == 0 || cy == 0)
 		return;
 
-	const float scale = qMin((float)cx / kPortraitWidth, (float)cy / kPortraitHeight);
-	const float viewX = ((float)cx - kPortraitWidth * scale) / 2.0f;
-	const float viewY = ((float)cy - kPortraitHeight * scale) / 2.0f;
+	const float scale = qMin((float)cx / dsrPortraitWidth(), (float)cy / dsrPortraitHeight());
+	const float viewX = ((float)cx - dsrPortraitWidth() * scale) / 2.0f;
+	const float viewY = ((float)cy - dsrPortraitHeight() * scale) / 2.0f;
 
 	/* One projection covering the whole widget, not just the frame, with a
 	 * matrix that maps canvas units into it. OBS does the same for its
@@ -244,7 +244,7 @@ void VerticalPreview::drawCallback(void *param, uint32_t cx, uint32_t cy)
 	gs_technique_begin(solidTech);
 	gs_technique_begin_pass(solidTech, 0);
 	gs_matrix_push();
-	gs_matrix_scale3f((float)kPortraitWidth, (float)kPortraitHeight, 1.0f);
+	gs_matrix_scale3f((float)dsrPortraitWidth(), (float)dsrPortraitHeight(), 1.0f);
 	gs_load_vertexbuffer(self->quad);
 	gs_draw(GS_TRISTRIP, 0, 0);
 	gs_matrix_pop();
@@ -257,7 +257,7 @@ void VerticalPreview::drawCallback(void *param, uint32_t cx, uint32_t cy)
 	 * behind and only the device ratio carries in. */
 	if (editable) {
 		self->drawSelection(self->selected, true, self->uiScale);
-		self->drawSpacingHelpers(self->selected, kPortraitWidth * scale, kPortraitHeight * scale,
+		self->drawSpacingHelpers(self->selected, dsrPortraitWidth() * scale, dsrPortraitHeight() * scale,
 					 self->uiScale);
 	}
 
@@ -275,12 +275,12 @@ void VerticalPreview::drawCallback(void *param, uint32_t cx, uint32_t cy)
 
 bool VerticalPreview::mapToCanvas(const QPointF &widgetPos, QPointF *canvasPos) const
 {
-	const float scale = qMin((float)width() / kPortraitWidth, (float)height() / kPortraitHeight);
+	const float scale = qMin((float)width() / dsrPortraitWidth(), (float)height() / dsrPortraitHeight());
 	if (scale <= 0.0f)
 		return false;
 
-	const float originX = (width() - kPortraitWidth * scale) / 2.0f;
-	const float originY = (height() - kPortraitHeight * scale) / 2.0f;
+	const float originX = (width() - dsrPortraitWidth() * scale) / 2.0f;
+	const float originY = (height() - dsrPortraitHeight() * scale) / 2.0f;
 
 	canvasPos->setX((widgetPos.x() - originX) / scale);
 	canvasPos->setY((widgetPos.y() - originY) / scale);
@@ -332,9 +332,9 @@ void VerticalPreview::setHoveredItem(obs_sceneitem_t *item)
 
 QPoint VerticalPreview::mapFromCanvas(const QPointF &canvasPos) const
 {
-	const float scale = qMin((float)width() / kPortraitWidth, (float)height() / kPortraitHeight);
-	const float originX = (width() - kPortraitWidth * scale) / 2.0f;
-	const float originY = (height() - kPortraitHeight * scale) / 2.0f;
+	const float scale = qMin((float)width() / dsrPortraitWidth(), (float)height() / dsrPortraitHeight());
+	const float originX = (width() - dsrPortraitWidth() * scale) / 2.0f;
+	const float originY = (height() - dsrPortraitHeight() * scale) / 2.0f;
 	return QPoint((int)(canvasPos.x() * scale + originX), (int)(canvasPos.y() * scale + originY));
 }
 

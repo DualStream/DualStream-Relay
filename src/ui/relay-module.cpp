@@ -33,9 +33,25 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "vertical-dock.hpp"
 #include "vertical-sources-dock.hpp"
 
+#include <QDockWidget>
+
 static RelayDock *dockInstance = nullptr;
 static VerticalCanvas *verticalManager = nullptr;
+static VerticalDock *verticalDockInstance = nullptr;
 static obs_hotkey_id endHotkeyId = OBS_INVALID_HOTKEY_ID;
+
+void dsrShowVerticalDock()
+{
+	if (!verticalDockInstance)
+		return;
+	/* The frontend wraps the widget in a QDockWidget it owns; the parent
+	 * is the only handle a plugin gets to it. */
+	QDockWidget *dock = qobject_cast<QDockWidget *>(verticalDockInstance->parentWidget());
+	if (dock) {
+		dock->setVisible(true);
+		dock->raise();
+	}
+}
 
 static void frontend_event_cb(enum obs_frontend_event event, void *)
 {
@@ -74,7 +90,9 @@ extern "C" bool dsr_frontend_init(void)
 	}
 
 	VerticalDock *verticalDock = new VerticalDock(verticalManager);
-	if (!obs_frontend_add_dock_by_id("dsr_vertical_dock", obs_module_text("Vertical.DockTitle"), verticalDock))
+	if (obs_frontend_add_dock_by_id("dsr_vertical_dock", obs_module_text("Vertical.DockTitle"), verticalDock))
+		verticalDockInstance = verticalDock;
+	else
 		delete verticalDock;
 
 	VerticalSourcesDock *verticalSources = new VerticalSourcesDock(verticalManager);
@@ -106,5 +124,6 @@ extern "C" void dsr_frontend_shutdown(void)
 	 * with it. The manager holds libobs references, so it goes now. */
 	delete verticalManager;
 	verticalManager = nullptr;
+	verticalDockInstance = nullptr;
 	dockInstance = nullptr;
 }

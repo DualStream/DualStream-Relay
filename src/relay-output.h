@@ -39,34 +39,40 @@ extern "C" {
  * URLs, so an SRT target always ends up on a custom service instead. */
 #define DSR_SERVICE_NAME "DualStream Relay"
 
+/* The service type this plugin registers for SRT routes. Implemented in
+ * relay-service.c; registered at module load. */
+#define DSR_SERVICE_ID "dsr_relay_service"
+void dsr_service_register(void);
+
 /* Fallback retransmission window for the SRT link, in milliseconds. The
- * relay's SRT front end runs a 2000 ms window: several round trips of
- * headroom at the 80-440 ms RTTs real uplinks show, without the go-live
- * delay and post-stall flush a larger window was measured to add. SRT
- * negotiates the larger of the two sides' figures, so asking for more here
- * would override the relay's choice for every stream from this plugin. A
- * latency figure carried in the minted ingest URL wins over this constant;
- * see dsr_srt_prepare. */
+ * relay's SRT front end runs its own window, and SRT negotiates the larger
+ * of the two sides' figures, so asking for more here would override the
+ * relay's choice for every stream from this plugin. A latency figure
+ * carried in the minted ingest URL wins over this constant; see
+ * dsr_srt_prepare. The encoder figures the relay wants live in
+ * relay-limits.h. */
 #define DSR_SRT_LATENCY_MS 2000
 
-/* What the relay wants from the contribution encoder.
- *
- * Bitrate: the relay re-encodes to between 5400 and 6500 kbps, so anything
- * above this is upload spent on detail the second encode discards.
- *
- * Keyframe interval: the relay caps its own GOP at two seconds, and its
- * passthrough mode refuses a stream that goes 8.5 seconds without an IDR.
- * Matching the two-second cadence keeps both happy. */
-#define DSR_TARGET_BITRATE_KBPS 6000
-#define DSR_TARGET_KEYINT_SEC 2
-
-/* The plugin never owns an output. It points the profile's streaming
- * service at the relay (with the user's consent) and restores the previous
- * service on request. A snapshot of the replaced service is kept in the
- * module config directory, sealed like every other stored key, so routing
- * is always reversible. */
+/* The plugin points the profile's streaming service at the relay (with the
+ * user's consent) and restores the previous service on request. A snapshot
+ * of the replaced service is kept in the module config directory, sealed
+ * like every other stored key, so routing is always reversible. */
 
 bool dsr_route_is_relay(void);
+
+/* True when the profile is on the relay over SRT but still through the
+ * generic custom service an earlier release used. Reapplying the route moves
+ * it to the relay's own service type, which is what enforces the relay's
+ * encoder settings and keeps the stream key from being overwritten. */
+bool dsr_route_needs_upgrade(void);
+
+/* Whether the relay's own service type gets to set the encoder's keyframe
+ * interval, and its bitrate cap, at stream start. OBS applies a service's
+ * settings in simple mode always and in advanced mode only when enforcing
+ * is on; the bitrate is put back afterwards when the profile ignores
+ * service recommendations, while the keyframe interval stays. */
+bool dsr_route_applies_keyint(void);
+bool dsr_route_applies_bitrate_cap(void);
 
 /* Returned strings are allocated with bstrdup(); callers bfree() them.
  * NULL when there is no streaming service or no such field. */

@@ -30,6 +30,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include "../relay-limits.h"
 #include "../relay-output.h"
 #include "../vertical-canvas.hpp"
 #include "dsr-ui-common.hpp"
@@ -190,21 +191,22 @@ void RelayDock::routeToRelay()
 QStringList RelayDock::encoderTuneChanges(const dsr_encoder_settings &current) const
 {
 	QStringList changes;
+	const struct dsr_canvas_limits &limits = dsr_limits_get()->landscape;
 
 	/* A profile that has never had its encoder settings edited has no
 	 * stored figure to show, so say so rather than printing a zero. */
 	const QString unset = dsrText("Tune.Unset");
 
-	if (current.video_bitrate_kbps != DSR_TARGET_BITRATE_KBPS) {
+	if (current.video_bitrate_kbps != limits.video_kbps) {
 		const int kbps = current.video_bitrate_kbps;
 		const QString from = kbps > 0 ? QString::number(kbps) : unset;
-		changes.append(QString(dsrText("Tune.Bitrate")).arg(from).arg(DSR_TARGET_BITRATE_KBPS));
+		changes.append(QString(dsrText("Tune.Bitrate")).arg(from).arg(limits.video_kbps));
 	}
 
 	/* Simple output mode has no keyframe-interval setting to change. */
-	if (current.advanced && current.keyint_sec != DSR_TARGET_KEYINT_SEC) {
+	if (current.advanced && current.keyint_sec != limits.keyint_sec) {
 		const QString from = current.keyint_sec >= 0 ? QString::number(current.keyint_sec) : unset;
-		changes.append(QString(dsrText("Tune.Keyint")).arg(from).arg(DSR_TARGET_KEYINT_SEC));
+		changes.append(QString(dsrText("Tune.Keyint")).arg(from).arg(limits.keyint_sec));
 	}
 
 	return changes;
@@ -229,9 +231,10 @@ void RelayDock::offerEncoderTune()
 	if (changes.isEmpty())
 		return;
 
+	const struct dsr_canvas_limits &limits = dsr_limits_get()->landscape;
 	QMessageBox box(this);
 	box.setWindowTitle(dsrText("Tune.Title"));
-	box.setText(dsrText("Tune.Body"));
+	box.setText(QString(dsrText("Tune.Body")).arg(limits.max_height).arg(qRound(limits.max_fps)));
 	box.setInformativeText(changes.join(QStringLiteral("\n")));
 	QPushButton *apply = box.addButton(dsrText("Tune.Apply"), QMessageBox::AcceptRole);
 	box.addButton(dsrText("Tune.Keep"), QMessageBox::RejectRole);
@@ -241,7 +244,7 @@ void RelayDock::offerEncoderTune()
 	if (box.clickedButton() != apply)
 		return;
 
-	dsr_encoder_write(DSR_TARGET_BITRATE_KBPS, current.advanced ? DSR_TARGET_KEYINT_SEC : -1);
+	dsr_encoder_write(limits.video_kbps, current.advanced ? limits.keyint_sec : -1);
 }
 
 void RelayDock::restoreRoute()

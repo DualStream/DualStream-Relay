@@ -31,7 +31,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include "../ladder.h"
 #include "../relay-output.h"
+#include "../relay-profile.h"
 #include "dsr-ui-common.hpp"
 #include "relay-dock-text.hpp"
 
@@ -39,11 +41,18 @@ void RelayDock::handleFrontendEvent(enum obs_frontend_event event)
 {
 	switch (event) {
 	case OBS_FRONTEND_EVENT_FINISHED_LOADING:
+		/* Normally cleared at module load, before OBS built this
+		 * profile's outputs; done again here for a profile that could
+		 * not be read that early, with the restart note that entails. */
+		if (dsr_route_is_relay())
+			dsr_profile_clear_enhanced_broadcasting(true);
 		firstRunShow();
 		refreshAll();
 		break;
 	case OBS_FRONTEND_EVENT_STREAMING_STARTING:
 		auth->ensureFreshToken();
+		pushLadderAuth();
+		dsr_ladder_begin_session();
 		dsr_stream_watch_clear();
 		dsr_stream_watch_arm();
 		/* True only across this handler. OBS hands the service to the
@@ -93,6 +102,18 @@ void RelayDock::handleFrontendEvent(enum obs_frontend_event event)
 		/* requestEnd polls as soon as the end call is acknowledged, so
 		 * nothing needs to wait a fixed interval for confirmation. */
 		refreshUi();
+		/* A ladder prepared for this stream stays on file for hours,
+		 * and the relay would build the next session around it even
+		 * if that session carried a single rendition. It is removed
+		 * the moment the stream it was made for is over. */
+		if (dsr_ladder_prepared_pending() && auth->signedIn()) {
+			dsr_ladder_note_prepared(false);
+			auth->del(QStringLiteral("/api/relay/dual-format/prepare"), [](const DsrApiResult &result) {
+				if (!result.ok())
+					obs_log(LOG_WARNING, "prepared dual format ladder could not be removed (%d)",
+						result.status);
+			});
+		}
 		/* Queued rather than called here. This event is delivered from
 		 * inside the output's own teardown, which is still reading the
 		 * service's strings; writing the service now would pull them
@@ -107,6 +128,13 @@ void RelayDock::handleFrontendEvent(enum obs_frontend_event event)
 			Qt::QueuedConnection);
 		break;
 	case OBS_FRONTEND_EVENT_PROFILE_CHANGED:
+		/* OBS has already rebuilt its outputs for the new profile by
+		 * the time this lands: any restart the old profile was waiting
+		 * on has happened in effect, and a switch found on here is
+		 * cleared for the next launch with a fresh restart note. */
+		dsr_profile_restart_satisfied();
+		if (dsr_route_is_relay())
+			dsr_profile_clear_enhanced_broadcasting(true);
 		refreshUi();
 		break;
 	case OBS_FRONTEND_EVENT_EXIT:

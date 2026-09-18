@@ -30,29 +30,14 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include "encoder-choice.hpp"
+#include "relay-limits.h"
 #include "relay-output.h"
 
 namespace {
 
-const int kPortraitAudioKbps = 160;
 const int kReconnectRetries = 25;
 const int kReconnectDelaySec = 2;
-
-/* Hardware first, matching what simple output mode would pick on the same
- * machine, with obs_x264 as the floor. H.264 only, the relay's contract. */
-const char *pickEncoderId()
-{
-	static const char *preferred[] = {"obs_nvenc_h264_tex", "ffmpeg_nvenc", "obs_qsv11_v2", "h264_texture_amf"};
-
-	for (const char *candidate : preferred) {
-		const char *id = nullptr;
-		for (size_t i = 0; obs_enum_encoder_types(i, &id); i++) {
-			if (id && strcmp(id, candidate) == 0)
-				return candidate;
-		}
-	}
-	return "obs_x264";
-}
 
 } // namespace
 
@@ -155,16 +140,17 @@ bool VerticalCanvas::startOutput(const QString &server, const QString &key, bool
 	/* Portrait is the same pixel count rotated, and the desktop app
 	 * publishes its vertical feed at the horizontal bitrate by default.
 	 * The service adds the SRT essentials, repeated headers and ADTS. */
+	const struct dsr_canvas_limits &limits = dsr_limits_get()->portrait;
 	obs_data_t *videoSettings = obs_data_create();
-	obs_data_set_int(videoSettings, "bitrate", DSR_TARGET_BITRATE_KBPS);
-	obs_data_set_int(videoSettings, "keyint_sec", DSR_TARGET_KEYINT_SEC);
+	obs_data_set_int(videoSettings, "bitrate", limits.video_kbps);
+	obs_data_set_int(videoSettings, "keyint_sec", limits.keyint_sec);
 
 	obs_data_t *audioSettings = obs_data_create();
-	obs_data_set_int(audioSettings, "bitrate", kPortraitAudioKbps);
+	obs_data_set_int(audioSettings, "bitrate", limits.audio_kbps);
 
 	obs_service_apply_encoder_settings(service, videoSettings, audioSettings);
 
-	const char *encoderId = pickEncoderId();
+	const char *encoderId = dsrPickH264EncoderId();
 	videoEncoder = obs_video_encoder_create(encoderId, "dsr_vertical_video", videoSettings, nullptr);
 	audioEncoder = obs_audio_encoder_create("ffmpeg_aac", "dsr_vertical_audio", audioSettings, 0, nullptr);
 	obs_data_release(videoSettings);
@@ -206,7 +192,7 @@ bool VerticalCanvas::startOutput(const QString &server, const QString &key, bool
 		return false;
 	}
 
-	obs_log(LOG_INFO, "portrait output starting (%s, %d kbps)", encoderId, DSR_TARGET_BITRATE_KBPS);
+	obs_log(LOG_INFO, "portrait output starting (%s, %d kbps)", encoderId, limits.video_kbps);
 	return true;
 }
 

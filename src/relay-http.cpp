@@ -55,12 +55,12 @@ size_t appendBody(char *data, size_t size, size_t nmemb, void *userdata)
  * teardown flag into a prompt exit instead of a wait on a network timeout. */
 int checkAbort(void *clientp, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
 {
-	const auto *aborting = static_cast<std::atomic<bool> *>(clientp);
-	return aborting->load() ? 1 : 0;
+	const auto *shouldAbort = static_cast<const std::function<bool()> *>(clientp);
+	return (*shouldAbort)() ? 1 : 0;
 }
 
 DsrHttpReply runRequest(const QByteArray &verb, const QByteArray &url, const QByteArray &payload, bool hasBody,
-			const QByteArray &bearer, std::atomic<bool> *aborting)
+			const QByteArray &bearer, const std::function<bool()> &shouldAbort)
 {
 	DsrHttpReply reply;
 	std::string body;
@@ -95,7 +95,7 @@ DsrHttpReply runRequest(const QByteArray &verb, const QByteArray &url, const QBy
 
 	curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
 	curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, checkAbort);
-	curl_easy_setopt(curl, CURLOPT_XFERINFODATA, aborting);
+	curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &shouldAbort);
 
 	/* The bearer travels as a custom header, and curl repeats custom headers
 	 * to a redirect target whatever host or scheme it names. Redirects are
@@ -138,6 +138,17 @@ DsrHttpReply runRequest(const QByteArray &verb, const QByteArray &url, const QBy
 }
 
 } // namespace
+
+DsrHttpReply dsrHttpRequestSync(const QByteArray &verb, const QByteArray &url, const QByteArray &payload, bool hasBody,
+				const QByteArray &bearer, std::function<bool()> shouldAbort)
+{
+	ensureCurlInit();
+	if (!shouldAbort)
+		shouldAbort = []() {
+			return false;
+		};
+	return runRequest(verb, url, payload, hasBody, bearer, shouldAbort);
+}
 
 DsrHttpClient::DsrHttpClient() : aborting(std::make_shared<std::atomic<bool>>(false))
 {
@@ -191,7 +202,8 @@ void DsrHttpClient::send(const QByteArray &verb, const QByteArray &url, const QB
 	auto finished = worker.finished;
 	worker.thread = std::thread(
 		[verb, url, payload, hasBody, bearer, completion = std::move(completion), abort, finished]() {
-			const DsrHttpReply reply = runRequest(verb, url, payload, hasBody, bearer, abort.get());
+			const DsrHttpReply reply =
+				runRequest(verb, url, payload, hasBody, bearer, [abort]() { return abort->load(); });
 			if (!abort->load() && completion) {
 				QMetaObject::invokeMethod(
 					QCoreApplication::instance(), [completion, reply]() { completion(reply); },

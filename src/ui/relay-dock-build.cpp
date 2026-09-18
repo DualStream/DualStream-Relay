@@ -34,6 +34,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
+#include "../vertical-canvas.hpp"
 #include "dsr-ui-common.hpp"
 #include "dsr-widgets.hpp"
 #include "relay-dock-text.hpp"
@@ -211,6 +212,7 @@ RelayDock::RelayDock(QWidget *parent) : QWidget(parent)
 	});
 
 	connect(auth, &RelayAuth::stateChanged, this, [this]() {
+		pushLadderAuth();
 		if (auth->signedIn())
 			refreshAll();
 		else
@@ -259,6 +261,12 @@ RelayDock::RelayDock(QWidget *parent) : QWidget(parent)
 
 	connect(status, &RelayStatus::updated, this, &RelayDock::refreshUi);
 	connect(status, &RelayStatus::endFinished, this, [this](bool) { refreshUi(); });
+
+	/* Whether the next stream carries dual format hangs on the vertical
+	 * canvas, which the vertical dock can turn on or off while this dock
+	 * is closed; the answer must be current when OBS sets a stream up. */
+	if (VerticalCanvas::instance())
+		connect(VerticalCanvas::instance(), &VerticalCanvas::changed, this, &RelayDock::refreshUi);
 
 	/* Started by showEvent, so a dock the user has closed does no work. */
 	tick = new QTimer(this);

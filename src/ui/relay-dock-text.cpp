@@ -42,6 +42,7 @@ QString dsrRelayStyleSheet()
 	font-size: 12px;
 }
 #banner[kind="protect"] { color: #33A9D1; background: rgba(8, 142, 188, 33); }
+#banner[kind="info"]    { color: #33A9D1; background: rgba(8, 142, 188, 18); }
 #banner[kind="warn"]    { color: #E8981C; background: rgba(245, 158, 11, 30); }
 #banner[kind="error"]   { color: #F87171; background: rgba(239, 68, 68, 28); }
 

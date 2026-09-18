@@ -6,6 +6,10 @@ project(${_name} VERSION ${_version})
 
 option(ENABLE_FRONTEND_API "Use obs-frontend-api for UI functionality" ON)
 option(ENABLE_QT "Use Qt functionality" ON)
+# The multi-rendition SRT output behind Twitch dual format. It links libsrt,
+# which the prebuilt Windows dependencies carry; other platforms opt in once
+# the library is available to the build.
+option(ENABLE_LADDER_OUTPUT "Build the multi-rendition SRT output" ${OS_WINDOWS})
 
 include(compilerconfig)
 include(defaults)
@@ -29,6 +33,26 @@ if(OS_WINDOWS)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Crypt32)
 endif()
 
+if(ENABLE_LADDER_OUTPUT)
+  list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/finders")
+  find_package(Libsrt REQUIRED)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Libsrt::Libsrt)
+  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DSR_LADDER_OUTPUT=1)
+  target_sources(
+    ${CMAKE_PROJECT_NAME}
+    PRIVATE
+      src/ladder-output.c
+      src/ladder-output-writer.c
+      src/ladder-srt.c
+      src/ladder-ts.c
+      src/ladder-ts-tables.c
+      src/ladder-encoders.cpp
+  )
+  if(OS_WINDOWS)
+    target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32)
+  endif()
+endif()
+
 if(ENABLE_QT)
   find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Core Qt6::Widgets)
@@ -46,9 +70,14 @@ target_sources(
   ${CMAKE_PROJECT_NAME}
   PRIVATE
     src/plugin-main.c
+    src/relay-limits.c
     src/relay-output.c
+    src/relay-profile.c
     src/relay-route.c
+    src/relay-service.c
     src/relay-stream-watch.c
+    src/encoder-choice.cpp
+    src/ladder-state.cpp
     src/relay-auth.cpp
     src/relay-destinations.cpp
     src/relay-direct.cpp
@@ -57,6 +86,7 @@ target_sources(
     src/relay-secrets.cpp
     src/relay-status.cpp
     src/vertical-canvas.cpp
+    src/vertical-layout.cpp
     src/vertical-scenes.cpp
     src/vertical-output.cpp
     src/vertical-transition.cpp
@@ -68,6 +98,7 @@ target_sources(
     src/ui/relay-dock-build.cpp
     src/ui/relay-dock-direct.cpp
     src/ui/relay-dock-events.cpp
+    src/ui/relay-dock-notes.cpp
     src/ui/relay-dock-rows.cpp
     src/ui/relay-dock-state.cpp
     src/ui/relay-dock-routing.cpp

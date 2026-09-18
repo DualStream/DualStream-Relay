@@ -123,7 +123,7 @@ void clampAspect(uint32_t handle, struct vec2 &size, const struct vec2 &baseSize
  * Zero when the point is not on one. */
 uint32_t VerticalPreview::handleAt(obs_sceneitem_t *item, const QPointF &canvasPos) const
 {
-	const float widgetScale = qMin((float)width() / kPortraitWidth, (float)height() / kPortraitHeight);
+	const float widgetScale = qMin((float)width() / dsrPortraitWidth(), (float)height() / dsrPortraitHeight());
 	if (widgetScale <= 0.0f)
 		return 0;
 	const double tolerance = kHandleGrabPx / widgetScale;

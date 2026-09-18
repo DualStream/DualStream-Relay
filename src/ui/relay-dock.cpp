@@ -33,6 +33,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <util/platform.h>
 #include <plugin-support.h>
 
+#include "../ladder.h"
 #include "../relay-output.h"
 #include "../vertical-canvas.hpp"
 #include "dsr-ui-common.hpp"
@@ -83,11 +84,17 @@ void RelayDock::refreshUi()
 	const State state = computeState();
 
 	/* Keep the vertical side current on whether anything wants the
-	 * portrait canvas; it gates the second output. */
+	 * portrait canvas on its own ingest; it gates the second output. A
+	 * Twitch destination on both canvases is served from the landscape
+	 * contribution as dual format and takes nothing from that ingest. */
 	if (VerticalCanvas::instance()) {
 		bool portrait = false;
 		for (const DsrDestination &dest : destinations->list()) {
-			if (dest.enabled &&
+			if (!dest.enabled)
+				continue;
+			const bool dualFormat = dest.platform == QLatin1String("twitch") &&
+						dest.canvas == QLatin1String("both");
+			if (!dualFormat &&
 			    (dest.canvas == QLatin1String("portrait") || dest.canvas == QLatin1String("both"))) {
 				portrait = true;
 				break;
@@ -98,6 +105,10 @@ void RelayDock::refreshUi()
 		 * without a subscription gets instead of the relay. */
 		VerticalCanvas::instance()->setDirectAllowed(state == State::Lapsed);
 	}
+
+	/* What the next stream's output must carry. Read by the relay service
+	 * when OBS sets the stream up, before any output exists. */
+	dsr_ladder_set_wanted(ladderWanted());
 
 	if (state == State::Protected && current != State::Protected && !status->protectedSince().isValid())
 		protectedLocalSince = QDateTime::currentDateTimeUtc();
@@ -183,13 +194,29 @@ void RelayDock::refreshUi()
 					  [this]() { routeToRelay(); });
 			} else {
 				/* Nothing is wrong, so what remains worth
-				 * saying: a connected account the plugin has
-				 * to keep working around, or where the video
-				 * settings and the relay's limits disagree.
-				 * Silent when neither applies, which is the
-				 * common case. */
+				 * saying, one thing at a time: a dual format
+				 * ladder on air, a connected account the
+				 * plugin has to keep working around, the
+				 * mobile side of the stream, or where the
+				 * video settings and the relay's limits
+				 * disagree. Silent when none applies, which
+				 * is the common case. */
+				const QString ladder = state == State::Live ? ladderNote() : QString();
+				const QString restart = restartNote();
 				const QString note = connectedAccountNote();
-				setBanner(!note.isEmpty() ? note : outputMismatch(), "warn", QString(), nullptr);
+				QString mobileText;
+				QString mobileAction;
+				std::function<void()> mobileFn;
+				if (!ladder.isEmpty())
+					setBanner(ladder, "info", QString(), nullptr);
+				else if (!restart.isEmpty())
+					setBanner(restart, "warn", QString(), nullptr);
+				else if (!note.isEmpty())
+					setBanner(note, "warn", QString(), nullptr);
+				else if (state == State::Ready && mobileNote(mobileText, mobileAction, mobileFn))
+					setBanner(mobileText, "warn", mobileAction, mobileFn);
+				else
+					setBanner(outputMismatch(), "warn", QString(), nullptr);
 			}
 			break;
 		default:
@@ -331,10 +358,16 @@ void RelayDock::refreshAll()
 	status->pollNow();
 	/* The ingest key can be rotated behind a cached target's back, from
 	 * the web or from another install, so age caps how long one is
-	 * trusted between the re-reads every stream start does anyway. */
+	 * trusted between the re-reads every stream start does anyway. A
+	 * fresh target is also the moment a profile still on an earlier
+	 * release's service is moved to the relay's own. */
 	const qint64 age = QDateTime::currentMSecsSinceEpoch() - targetFetchedAtMs;
-	if (auth->signedIn() && (!targetFetched || age > kTargetMaxAgeMs))
-		fetchIngestTarget(nullptr);
+	if (auth->signedIn() && (!targetFetched || age > kTargetMaxAgeMs)) {
+		fetchIngestTarget([this](bool ok) {
+			if (ok)
+				repairStreamKey();
+		});
+	}
 	refreshUi();
 }
 

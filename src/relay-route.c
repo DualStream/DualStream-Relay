@@ -31,6 +31,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 
 #include "relay-output.h"
+#include "relay-profile.h"
 #include "relay-secrets.h"
 
 static char *snapshot_path(void)
@@ -97,6 +98,33 @@ bool dsr_route_is_service_entry(void)
 static bool is_srt_url(const char *url)
 {
 	return url && strncmp(url, SRT_SCHEME, sizeof(SRT_SCHEME) - 1) == 0;
+}
+
+static bool on_relay_service_type(void)
+{
+	obs_service_t *service = obs_frontend_get_streaming_service();
+	return service && strcmp(obs_service_get_type(service), DSR_SERVICE_ID) == 0;
+}
+
+bool dsr_route_needs_upgrade(void)
+{
+	if (on_relay_service_type() || !dsr_route_is_relay())
+		return false;
+
+	char *server = dsr_route_current_server();
+	const bool srt = is_srt_url(server);
+	bfree(server);
+	return srt;
+}
+
+bool dsr_route_applies_keyint(void)
+{
+	return on_relay_service_type() && dsr_profile_applies_service_settings();
+}
+
+bool dsr_route_applies_bitrate_cap(void)
+{
+	return dsr_route_applies_keyint() && !dsr_profile_ignores_recommended();
 }
 
 static int hex_value(char c)
@@ -263,12 +291,18 @@ bool dsr_route_apply(const char *server, const char *key)
 
 	snapshot_current_service();
 
+	/* An SRT target goes on the relay's own service type, which applies
+	 * the relay's encoder settings and keeps the stream key. Only an
+	 * RTMPS target still needs the generic custom service. */
+	const bool srt = is_srt_url(server);
 	obs_data_t *settings = obs_data_create();
 	obs_data_set_string(settings, "server", server);
 	obs_data_set_string(settings, "key", key);
-	obs_data_set_bool(settings, "use_auth", false);
+	if (!srt)
+		obs_data_set_bool(settings, "use_auth", false);
 
-	obs_service_t *service = obs_service_create("rtmp_custom", "default_service", settings, NULL);
+	obs_service_t *service =
+		obs_service_create(srt ? DSR_SERVICE_ID : "rtmp_custom", "default_service", settings, NULL);
 	obs_data_release(settings);
 	if (!service)
 		return false;
@@ -277,7 +311,12 @@ bool dsr_route_apply(const char *server, const char *key)
 	obs_frontend_save_streaming_service();
 	obs_service_release(service);
 
-	obs_log(LOG_INFO, "stream output routed to the relay");
+	/* A profile arriving from a platform account can still carry that
+	 * platform's Enhanced Broadcasting switch, which would refuse every
+	 * stream start on this route. */
+	dsr_profile_clear_enhanced_broadcasting(true);
+
+	obs_log(LOG_INFO, "stream output routed to the relay (%s)", srt ? "srt" : "rtmps");
 	return true;
 }
 

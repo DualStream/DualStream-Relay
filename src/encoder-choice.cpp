@@ -18,21 +18,22 @@ You should have received a copy of the GNU General Public License along
 with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
-#pragma once
+#include "encoder-choice.hpp"
 
-#include <stdint.h>
+#include <cstring>
 
-#include "relay-limits.h"
+#include <obs.h>
 
-/* Delivery geometry of the relay's portrait program. The canvas composites at
- * this size so no scaling pass sits between it and the encoder, and every
- * saved layout is authored in these pixels. */
-inline uint32_t dsrPortraitWidth()
+const char *dsrPickH264EncoderId()
 {
-	return dsr_limits_get()->portrait.max_width;
-}
+	static const char *preferred[] = {"obs_nvenc_h264_tex", "ffmpeg_nvenc", "obs_qsv11_v2", "h264_texture_amf"};
 
-inline uint32_t dsrPortraitHeight()
-{
-	return dsr_limits_get()->portrait.max_height;
+	for (const char *candidate : preferred) {
+		const char *id = nullptr;
+		for (size_t i = 0; obs_enum_encoder_types(i, &id); i++) {
+			if (id && strcmp(id, candidate) == 0)
+				return candidate;
+		}
+	}
+	return "obs_x264";
 }

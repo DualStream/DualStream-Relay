@@ -20,19 +20,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #pragma once
 
-#include <stdint.h>
-
-#include "relay-limits.h"
-
-/* Delivery geometry of the relay's portrait program. The canvas composites at
- * this size so no scaling pass sits between it and the encoder, and every
- * saved layout is authored in these pixels. */
-inline uint32_t dsrPortraitWidth()
-{
-	return dsr_limits_get()->portrait.max_width;
-}
-
-inline uint32_t dsrPortraitHeight()
-{
-	return dsr_limits_get()->portrait.max_height;
-}
+/* The H.264 encoder this machine should use for a program the plugin encodes
+ * itself. Hardware first, matching what simple output mode would pick on the
+ * same machine, with obs_x264 as the floor. H.264 only, the relay's
+ * contract. */
+const char *dsrPickH264EncoderId();

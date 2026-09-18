@@ -48,6 +48,13 @@ struct DsrHttpReply {
 	QByteArray body;
 };
 
+/* One request run to completion on the calling thread. For code that is
+ * already off the UI thread and needs the answer before it can go on, such as
+ * an output's start thread. shouldAbort is polled through the transfer and a
+ * true ends it early. */
+DsrHttpReply dsrHttpRequestSync(const QByteArray &verb, const QByteArray &url, const QByteArray &payload, bool hasBody,
+				const QByteArray &bearer, std::function<bool()> shouldAbort);
+
 class DsrHttpClient {
 public:
 	using Completion = std::function<void(const DsrHttpReply &)>;

@@ -126,6 +126,17 @@ private:
 	QString blockingSetupIssue() const;
 	QString connectedAccountNote() const;
 	QString streamStopNotice() const;
+	/* The mobile side of the stream: off when a destination wants it, or
+	 * on with nothing taking it. Fills the banner and returns true when
+	 * there is something to say. */
+	bool mobileNote(QString &text, QString &actionText, std::function<void()> &action);
+	/* Whether the next stream carries a Twitch dual format ladder. */
+	bool ladderWanted() const;
+	QString ladderNote() const;
+	QString restartNote() const;
+	/* Hand the account's credentials to the dual format side, which makes
+	 * its own request from the output's thread. */
+	void pushLadderAuth();
 	void openEditDialog(const QString &destinationId);
 
 	/* Implemented in relay-dock-direct.cpp. */

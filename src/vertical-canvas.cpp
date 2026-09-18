@@ -45,10 +45,10 @@ void portraitVideoInfo(struct obs_video_info *ovi)
 	 * geometry is ours. Composited at delivery size, so no scaling pass
 	 * sits between the canvas and the encoder. */
 	obs_get_video_info(ovi);
-	ovi->base_width = kPortraitWidth;
-	ovi->base_height = kPortraitHeight;
-	ovi->output_width = kPortraitWidth;
-	ovi->output_height = kPortraitHeight;
+	ovi->base_width = dsrPortraitWidth();
+	ovi->base_height = dsrPortraitHeight();
+	ovi->output_width = dsrPortraitWidth();
+	ovi->output_height = dsrPortraitHeight();
 }
 
 } // namespace
@@ -128,9 +128,13 @@ void VerticalCanvas::setEnabled(bool on)
 		releaseOutput();
 		releaseTransition();
 		disconnectAllSceneSignals();
-		obs_frontend_remove_canvas(canvas);
-		obs_canvas_release(canvas);
+		/* Let go of the handle before the canvas goes, so nothing
+		 * reading it from another thread can take a reference to a
+		 * canvas that is being destroyed. */
+		obs_canvas_t *going = canvas;
 		canvas = nullptr;
+		obs_frontend_remove_canvas(going);
+		obs_canvas_release(going);
 		obs_log(LOG_INFO, "vertical canvas disabled");
 	}
 
@@ -197,6 +201,14 @@ void VerticalCanvas::adopt()
 	emit changed();
 }
 
+/* A layout pass that had to wait for the mixes to go idle, or for a source
+ * to report its size, gets another go at the moments that change either. */
+void VerticalCanvas::retryDeferredLayouts()
+{
+	if (canvas && layoutsDeferred)
+		reconcileScenes();
+}
+
 void VerticalCanvas::teardown()
 {
 	setSelectedItemId(-1);
@@ -252,8 +264,15 @@ void VerticalCanvas::handleFrontendEvent(enum obs_frontend_event event)
 		emit changed();
 		break;
 	case OBS_FRONTEND_EVENT_STREAMING_STARTED:
+		maybeStartOutput();
+		break;
 	case OBS_FRONTEND_EVENT_STREAMING_STOPPED:
 		maybeStartOutput();
+		retryDeferredLayouts();
+		break;
+	case OBS_FRONTEND_EVENT_RECORDING_STOPPED:
+	case OBS_FRONTEND_EVENT_VIRTUALCAM_STOPPED:
+		retryDeferredLayouts();
 		break;
 	case OBS_FRONTEND_EVENT_STREAMING_STOPPING:
 		stopOutput(false);

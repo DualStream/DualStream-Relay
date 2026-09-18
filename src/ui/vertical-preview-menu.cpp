@@ -50,7 +50,7 @@ void fitToCanvas(obs_sceneitem_t *item, enum obs_bounds_type boundsType)
 	vec2_set(&info.scale, 1.0f, 1.0f);
 	info.alignment = OBS_ALIGN_LEFT | OBS_ALIGN_TOP;
 	info.rot = 0.0f;
-	vec2_set(&info.bounds, (float)kPortraitWidth, (float)kPortraitHeight);
+	vec2_set(&info.bounds, (float)dsrPortraitWidth(), (float)dsrPortraitHeight());
 	info.bounds_type = boundsType;
 	info.bounds_alignment = OBS_ALIGN_CENTER;
 	info.crop_to_bounds = obs_sceneitem_get_bounds_crop(item);
@@ -81,8 +81,8 @@ void centerOnCanvas(obs_sceneitem_t *item)
 
 	struct vec2 pos;
 	obs_sceneitem_get_pos(item, &pos);
-	pos.x += ((float)kPortraitWidth - box.x.x) / 2.0f - box.t.x;
-	pos.y += ((float)kPortraitHeight - box.y.y) / 2.0f - box.t.y;
+	pos.x += ((float)dsrPortraitWidth() - box.x.x) / 2.0f - box.t.x;
+	pos.y += ((float)dsrPortraitHeight() - box.y.y) / 2.0f - box.t.y;
 	obs_sceneitem_set_pos(item, &pos);
 }
 

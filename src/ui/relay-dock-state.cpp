@@ -211,11 +211,12 @@ void RelayDock::repairStreamKey()
 	}
 
 	if (key == wanted) {
-		/* Key right, URL parameters stale: an older build's latency
-		 * figures. Only replaced while idle, because replacing the
-		 * service destroys the one the output is holding. A stream
-		 * already under way keeps working on the old figures. */
-		if (phase == StreamPhase::Idle && server != targetServer)
+		/* Key right, but the service is stale: an older build's latency
+		 * figures in the URL, or the generic custom service an earlier
+		 * release routed through. Only replaced while idle, because
+		 * replacing the service destroys the one the output is holding.
+		 * A stream already under way keeps working as it is. */
+		if (phase == StreamPhase::Idle && (server != targetServer || dsr_route_needs_upgrade()))
 			dsr_route_apply(targetServer.toUtf8().constData(), targetKey.toUtf8().constData());
 		return;
 	}
@@ -274,32 +275,6 @@ QString RelayDock::protectedBannerText() const
 		return QString(dsrText("Protected.Resume")).arg(countdown);
 	return QString(dsrText("Protected.Banner")).arg(countdown);
 }
-
-/* The one preflight fact worth a banner: the video settings ask for something
- * the relay will not deliver. Everything the old card said about which
- * destinations are enabled is in the rows below it, and the delivered bitrate
- * is not something the user can act on, so neither is repeated here. Empty
- * when the settings and the relay agree, which is the common case. */
-QString RelayDock::outputMismatch() const
-{
-	QStringList issues;
-
-	struct dsr_video_summary video;
-	if (dsr_get_video_summary(&video)) {
-		const uint32_t shortSide = video.output_width < video.output_height ? video.output_width
-										    : video.output_height;
-		if (shortSide > 1080)
-			issues.append(dsrText("Preflight.Downscale"));
-		if (video.fps > 60.5)
-			issues.append(dsrText("Preflight.FpsCap"));
-	}
-
-	if (dsr_get_configured_bitrate_kbps() > 8000)
-		issues.append(dsrText("Preflight.BitrateHigh"));
-
-	return issues.join(QStringLiteral(" "));
-}
-
 QString RelayDock::summaryText(State state) const
 {
 	if (state == State::Live || state == State::Protected) {
@@ -334,97 +309,4 @@ QString RelayDock::environmentSignature() const
 	bfree(key);
 	bfree(account);
 	return value;
-}
-
-QString RelayDock::blockingSetupIssue() const
-{
-	if (!dsr_route_is_relay())
-		return QString();
-
-	/* The relay takes H.264 video with AAC audio and nothing else. OBS
-	 * will refuse to start on AV1 by itself, but it will happily send
-	 * HEVC or Opus over SRT, the relay's pipeline decodes neither, and
-	 * every platform then sits on the standby screen while OBS reports a
-	 * healthy stream. Better said before the stream starts than
-	 * discovered from the platforms. */
-	char *codec = dsr_get_stream_video_codec();
-	if (codec) {
-		const QString name = QString::fromUtf8(codec);
-		bfree(codec);
-		if (name != QLatin1String("h264"))
-			return QString(dsrText("Warning.VideoCodec")).arg(name.toUpper());
-	}
-
-	char *audio = dsr_get_stream_audio_codec();
-	if (audio) {
-		const QString name = QString::fromUtf8(audio);
-		bfree(audio);
-		if (name != QLatin1String("aac"))
-			return QString(dsrText("Warning.AudioCodec")).arg(name.toUpper());
-	}
-
-	return QString();
-}
-
-/* A connected account overwrites the relay key at every stream start. The
- * repair at the streaming-starting event undoes that, so it is a note rather
- * than a blocker, but it stays worth a word: the account also points other
- * OBS behavior (bandwidth tests, stream pages) at itself, and disconnecting
- * it removes the tug of war entirely. */
-QString RelayDock::connectedAccountNote() const
-{
-	if (!dsr_route_is_relay())
-		return QString();
-
-	char *account = dsr_get_connected_account();
-	if (!account)
-		return QString();
-	const QString name = QString::fromUtf8(account);
-	bfree(account);
-	return QString(dsrText("Warning.ConnectedAccount")).arg(name);
-}
-
-/* Why the last stream ended, when it ended on an error. The stop code and
- * the transport's own message are captured on the output's stop signal; the
- * code maps to a plain sentence and the message rides along verbatim, since
- * it is the most specific fact available. */
-QString RelayDock::streamStopNotice() const
-{
-	/* The watch follows whatever output OBS started, which is not always
-	 * one this plugin pointed anywhere. Reporting a stream that went
-	 * straight to a platform would name the relay for a refusal it had no
-	 * part in. */
-	if (!dsr_route_is_relay())
-		return QString();
-
-	int code = 0;
-	char *errorRaw = NULL;
-	if (!dsr_stream_last_stop(&code, &errorRaw))
-		return QString();
-
-	const QString detail = QString::fromUtf8(errorRaw ? errorRaw : "");
-	bfree(errorRaw);
-
-	const char *reasonKey;
-	switch (code) {
-	case OBS_OUTPUT_CONNECT_FAILED:
-	case OBS_OUTPUT_BAD_PATH:
-		reasonKey = "StreamStop.ConnectFailed";
-		break;
-	case OBS_OUTPUT_DISCONNECTED:
-		reasonKey = "StreamStop.Disconnected";
-		break;
-	case OBS_OUTPUT_INVALID_STREAM:
-	case OBS_OUTPUT_UNSUPPORTED:
-		reasonKey = "StreamStop.InvalidStream";
-		break;
-	case OBS_OUTPUT_ENCODE_ERROR:
-		reasonKey = "StreamStop.EncodeError";
-		break;
-	default:
-		reasonKey = "StreamStop.Error";
-		break;
-	}
-
-	return QString(dsrText("Warning.StreamStopped")).arg(dsrText(reasonKey)).arg(detail).trimmed();
 }

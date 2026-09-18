@@ -21,10 +21,18 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 
-/* Implemented in ui/relay-dock.cpp. The module entry points stay in C; all
+#include "ladder.h"
+#include "relay-output.h"
+#include "relay-profile.h"
+
+/* Implemented in ui/relay-module.cpp. The module entry points stay in C; all
  * Qt work lives behind these two calls. */
 extern bool dsr_frontend_init(void);
 extern void dsr_frontend_shutdown(void);
+
+#ifdef DSR_LADDER_OUTPUT
+void dsr_ladder_output_register(void);
+#endif
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
@@ -41,6 +49,19 @@ MODULE_EXPORT const char *obs_module_description(void)
 
 bool obs_module_load(void)
 {
+	/* Registered before the frontend loads the profile's service, so a
+	 * profile saved on the relay's own service type comes back as one. */
+	dsr_service_register();
+#ifdef DSR_LADDER_OUTPUT
+	dsr_ladder_output_register();
+#endif
+
+	/* OBS builds its outputs for the profile right after the modules load,
+	 * and a profile routed to the relay must not still carry a platform's
+	 * Enhanced Broadcasting switch when it does. */
+	if (dsr_profile_service_names_relay())
+		dsr_profile_clear_enhanced_broadcasting(false);
+
 	if (!dsr_frontend_init()) {
 		obs_log(LOG_ERROR, "frontend setup failed");
 		return false;

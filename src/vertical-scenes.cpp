@@ -31,7 +31,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 
-#include "vertical-geometry.hpp"
+#include "vertical-layout.hpp"
 
 namespace {
 
@@ -94,83 +94,6 @@ bool collectSeedEntries(obs_scene_t *, obs_sceneitem_t *item, void *param)
 	return true;
 }
 
-/* Place an item as a plain centered transform: fill covers the 9:16 frame
- * with the overflow clipping at the edges, fit letterboxes inside it. A real
- * scale rather than a bounds box, because the item's box IS the source here:
- * selection, dragging and corner resizing in the preview all read the box
- * transform, and a full-canvas bounds box would make every item hit-test and
- * outline as the whole scene. A source with no dimensions yet keeps scale one
- * and gets placed properly the next time an arrangement action touches it. */
-void applyFramePlacement(obs_sceneitem_t *item, obs_source_t *source, bool fill)
-{
-	const float sourceWidth = (float)obs_source_get_width(source);
-	const float sourceHeight = (float)obs_source_get_height(source);
-
-	obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_NONE);
-
-	if (sourceWidth <= 0.0f || sourceHeight <= 0.0f)
-		return;
-
-	const float fitX = (float)kPortraitWidth / sourceWidth;
-	const float fitY = (float)kPortraitHeight / sourceHeight;
-	const float factor = fill ? qMax(fitX, fitY) : qMin(fitX, fitY);
-
-	struct vec2 scale;
-	struct vec2 pos;
-	vec2_set(&scale, factor, factor);
-	vec2_set(&pos, ((float)kPortraitWidth - sourceWidth * factor) / 2.0f,
-		 ((float)kPortraitHeight - sourceHeight * factor) / 2.0f);
-
-	obs_sceneitem_set_scale(item, &scale);
-	obs_sceneitem_set_pos(item, &pos);
-}
-
-/* The first release seeded items with full-canvas bounds boxes. Convert them
- * to the equivalent plain transform, preserving what is on screen: a centered
- * OUTER or INNER fit inside a bounds box at some position renders the source
- * at one computable scale and offset. Idempotent, since converted items have
- * no bounds type. */
-bool migrateBoundsItem(obs_scene_t *, obs_sceneitem_t *item, void *)
-{
-	const enum obs_bounds_type type = obs_sceneitem_get_bounds_type(item);
-	if (type == OBS_BOUNDS_NONE)
-		return true;
-
-	obs_source_t *source = obs_sceneitem_get_source(item);
-	const float sourceWidth = (float)obs_source_get_width(source);
-	const float sourceHeight = (float)obs_source_get_height(source);
-
-	struct vec2 bounds;
-	struct vec2 pos;
-	obs_sceneitem_get_bounds(item, &bounds);
-	obs_sceneitem_get_pos(item, &pos);
-
-	if (sourceWidth > 0.0f && sourceHeight > 0.0f && bounds.x > 0.0f && bounds.y > 0.0f) {
-		const float fitX = bounds.x / sourceWidth;
-		const float fitY = bounds.y / sourceHeight;
-		const float factor = type == OBS_BOUNDS_SCALE_OUTER ? qMax(fitX, fitY) : qMin(fitX, fitY);
-
-		struct vec2 scale;
-		struct vec2 newPos;
-		vec2_set(&scale, factor, factor);
-		vec2_set(&newPos, pos.x + (bounds.x - sourceWidth * factor) / 2.0f,
-			 pos.y + (bounds.y - sourceHeight * factor) / 2.0f);
-		obs_sceneitem_set_scale(item, &scale);
-		obs_sceneitem_set_pos(item, &newPos);
-	}
-
-	obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_NONE);
-	return true;
-}
-
-bool migrateCanvasScene(void *, obs_source_t *source)
-{
-	obs_scene_t *scene = obs_scene_from_source(source);
-	if (scene)
-		obs_scene_enum_items(scene, migrateBoundsItem, nullptr);
-	return true;
-}
-
 struct MembershipEntry {
 	obs_sceneitem_t *item;
 	QString uuid;
@@ -189,7 +112,7 @@ bool collectMembership(obs_scene_t *, obs_sceneitem_t *item, void *param)
 
 void VerticalCanvas::placeItem(obs_sceneitem_t *item, bool fill)
 {
-	applyFramePlacement(item, obs_sceneitem_get_source(item), fill);
+	dsrApplyFramePlacement(item, obs_sceneitem_get_source(item), fill);
 }
 
 void VerticalCanvas::reconcileScenes()
@@ -209,9 +132,15 @@ void VerticalCanvas::reconcileScenes()
 	}
 	obs_frontend_source_list_free(&scenes);
 
-	/* Convert any first-release bounds arrangements before anything reads
-	 * item boxes; a no-op on scenes already in plain-transform form. */
-	obs_canvas_enum_scenes(canvas, migrateCanvasScene, nullptr);
+	/* Bring saved layouts up to date before anything reads item boxes; a
+	 * no-op on scenes already in the current form. Scaling to a changed
+	 * canvas size waits for the mixes to be idle, and converting a first
+	 * release layout waits for its source to report a size; either is
+	 * said once rather than at every pass until then. */
+	const bool wasDeferred = layoutsDeferred;
+	layoutsDeferred = !dsrMigrateCanvasLayouts(canvas);
+	if (layoutsDeferred && !wasDeferred)
+		obs_log(LOG_INFO, "some portrait layouts keep their previous form until they can be migrated");
 
 	QVector<QString> canvasScenes;
 	obs_canvas_enum_scenes(canvas, collectCanvasSceneNames, &canvasScenes);
@@ -260,6 +189,7 @@ void VerticalCanvas::seedCounterpart(obs_source_t *landscapeScene)
 		return;
 	}
 	connectCounterpartSignals(portrait);
+	dsrStampLayoutSize(obs_scene_get_source(portrait));
 
 	QVector<SeedEntry> entries;
 	obs_scene_enum_items(landscape, collectSeedEntries, &entries);
@@ -275,7 +205,7 @@ void VerticalCanvas::seedCounterpart(obs_source_t *landscapeScene)
 		if (!item)
 			continue;
 		const bool isHero = hero == &entry;
-		applyFramePlacement(item, entry.source, isHero);
+		dsrApplyFramePlacement(item, entry.source, isHero);
 		obs_sceneitem_set_visible(item, isHero);
 	}
 
@@ -358,7 +288,7 @@ void VerticalCanvas::syncMembership(const QString &sceneUuid)
 		obs_source_t *source = obs_sceneitem_get_source(entry.item);
 		obs_sceneitem_t *item = obs_scene_add(portrait, source);
 		if (item) {
-			applyFramePlacement(item, source, false);
+			dsrApplyFramePlacement(item, source, false);
 			obs_sceneitem_set_visible(item, false);
 		}
 	}

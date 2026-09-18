@@ -27,6 +27,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <obs-frontend-api.h>
 
+#include "../relay-output.h"
 #include "../vertical-canvas.hpp"
 #include "dsr-ui-common.hpp"
 
@@ -80,6 +81,17 @@ bool dsrSetVerticalEnabled(QWidget *parent, bool on)
 	VerticalCanvas *manager = VerticalCanvas::instance();
 	if (!manager)
 		return false;
+
+	/* The portrait program can be part of the stream in progress, either
+	 * on its own ingest or inside a dual format broadcast, and taking its
+	 * canvas away would pull the mix out from under an encoder. The stream
+	 * output counts from the moment it takes the service, connect attempt
+	 * included, since dual format builds its encoders during that window. */
+	if (!on && manager->enabled() &&
+	    (obs_frontend_streaming_active() || dsr_stream_output_engaged() || manager->publishing())) {
+		QMessageBox::information(parent, dsrText("Vertical.DockTitle"), dsrText("Vertical.DisableWhileLive"));
+		return false;
+	}
 
 	/* Turning it off discards every portrait layout, so it is confirmed the
 	 * way OBS confirms removing a scene. */

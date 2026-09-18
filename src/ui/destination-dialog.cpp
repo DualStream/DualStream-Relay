@@ -35,16 +35,25 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPushButton>
 #include <QVBoxLayout>
 
+#include "../ladder.h"
 #include "../relay-secrets.hpp"
 #include "dsr-ui-common.hpp"
 
 QStringList DestinationDialog::allowedCanvases(const QString &platform)
 {
-	/* The relay fans out Twitch over RTMP, which cannot carry a portrait
-	 * program (that needs WHIP enhanced broadcasting), and Kick has no
-	 * portrait ingest. The server accepts these combinations anyway, so
+	/* Twitch takes no portrait stream of its own: "both" there is dual
+	 * format, one Enhanced Broadcasting session carrying the landscape and
+	 * portrait programs together, which the relay serves from a ladder
+	 * this plugin encodes. A build without that output must not offer it,
+	 * or the relay would wait for renditions that never arrive. Kick has
+	 * no portrait ingest at all. The server accepts every combination, so
 	 * the gate lives here. */
-	if (platform == QLatin1String("twitch") || platform == QLatin1String("kick"))
+	if (platform == QLatin1String("twitch")) {
+		if (dsr_ladder_available())
+			return {QStringLiteral("landscape"), QStringLiteral("both")};
+		return {QStringLiteral("landscape")};
+	}
+	if (platform == QLatin1String("kick"))
 		return {QStringLiteral("landscape")};
 	return {QStringLiteral("landscape"), QStringLiteral("portrait"), QStringLiteral("both")};
 }
@@ -53,9 +62,12 @@ void DestinationDialog::fillCanvasCombo(QComboBox *combo, const QString &platfor
 					QLabel *note)
 {
 	const QStringList allowed = allowedCanvases(platform);
+	const bool twitch = platform == QLatin1String("twitch");
 	combo->clear();
-	for (const QString &canvas : allowed)
-		combo->addItem(dsrCanvasDisplay(canvas), canvas);
+	for (const QString &canvas : allowed) {
+		const bool dualFormat = twitch && canvas == QLatin1String("both");
+		combo->addItem(dualFormat ? dsrText("Canvas.DualFormat") : dsrCanvasDisplay(canvas), canvas);
+	}
 
 	int index = combo->findData(selected);
 	combo->setCurrentIndex(index >= 0 ? index : 0);
@@ -63,9 +75,11 @@ void DestinationDialog::fillCanvasCombo(QComboBox *combo, const QString &platfor
 
 	if (note) {
 		const bool locked = allowed.size() == 1;
-		note->setVisible(locked);
+		note->setVisible(locked || twitch);
 		if (locked)
 			note->setText(dsrText("Destinations.LandscapeOnly"));
+		else if (twitch)
+			note->setText(dsrText("Destinations.TwitchBoth"));
 	}
 }
 

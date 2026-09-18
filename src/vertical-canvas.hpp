@@ -134,6 +134,7 @@ private:
 	void teardown();
 	void ensureVideo();
 	void reconcileScenes();
+	void retryDeferredLayouts();
 	void seedCounterpart(obs_source_t *landscapeScene);
 	void connectSceneSignals(obs_source_t *landscapeScene);
 	void disconnectAllSceneSignals();
@@ -173,6 +174,10 @@ private:
 	static void onMainTransitionStart(void *data, calldata_t *cd);
 
 	obs_canvas_t *canvas = nullptr;
+
+	/* A layout migration is waiting on the mixes going idle or on a source
+	 * reporting its size. */
+	bool layoutsDeferred = false;
 
 	/* The canvas program channel holds this, not a scene: it is a private
 	 * copy of OBS's own transition, driven from the same signal, so a scene

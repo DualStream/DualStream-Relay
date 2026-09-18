@@ -348,9 +348,10 @@ void VerticalPreview::drawSpacingHelpers(obs_sceneitem_t *item, float viewWidth,
 		bool horizontal;
 	} sides[4] = {
 		{top.y, top.x, 0.0f, top.x, top.y, false},
-		{(float)kPortraitHeight - bottom.y, bottom.x, bottom.y, bottom.x, (float)kPortraitHeight, false},
+		{(float)dsrPortraitHeight() - bottom.y, bottom.x, bottom.y, bottom.x, (float)dsrPortraitHeight(),
+		 false},
 		{left.x, 0.0f, left.y, left.x, left.y, true},
-		{(float)kPortraitWidth - right.x, right.x, right.y, (float)kPortraitWidth, right.y, true},
+		{(float)dsrPortraitWidth() - right.x, right.x, right.y, (float)dsrPortraitWidth(), right.y, true},
 	};
 
 	gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
@@ -359,8 +360,8 @@ void VerticalPreview::drawSpacingHelpers(obs_sceneitem_t *item, float viewWidth,
 
 	/* Lines are drawn in canvas units, so the thickness has to be scaled
 	 * back out of them to land at a constant size on screen. */
-	const float canvasPerPixelX = (float)kPortraitWidth / viewWidth;
-	const float canvasPerPixelY = (float)kPortraitHeight / viewHeight;
+	const float canvasPerPixelX = (float)dsrPortraitWidth() / viewWidth;
+	const float canvasPerPixelY = (float)dsrPortraitHeight() / viewHeight;
 
 	for (int i = 0; i < 4; i++) {
 		if (sides[i].gap <= 0.0f)

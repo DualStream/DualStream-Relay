@@ -29,6 +29,11 @@ class QPushButton;
 class QStackedWidget;
 class VerticalPreview;
 
+/* Bring the vertical dock into view, for the moment the relay dock turns the
+ * canvas on for the user: the layouts it has just created are what they want
+ * to see next. */
+void dsrShowVerticalDock();
+
 /* The portrait canvas preview. Every pixel the dock can spare goes to the 9:16
  * frame, so there is no header and no hint line; turning the canvas off lives
  * in the preview's context menu.

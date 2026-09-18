@@ -158,7 +158,7 @@ void VerticalCanvas::matchTransition(obs_source_t *main)
 	}
 
 	transitionSettings = fingerprint;
-	obs_transition_set_size(transition, kPortraitWidth, kPortraitHeight);
+	obs_transition_set_size(transition, dsrPortraitWidth(), dsrPortraitHeight());
 	obs_transition_set_alignment(transition, OBS_ALIGN_CENTER);
 	obs_transition_set_scale_type(transition, OBS_TRANSITION_SCALE_ASPECT);
 

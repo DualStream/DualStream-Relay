@@ -238,7 +238,11 @@ QWidget *RelayDock::makeRow(const DsrDestination &dest, const DsrDestStatus *liv
 		state->setText(dsrText(stateKey.constData()));
 		lineLayout->addWidget(state);
 	} else {
-		QLabel *canvas = new QLabel(dsrCanvasDisplay(dest.canvas));
+		/* A Twitch destination on both canvases is one broadcast
+		 * carrying both, and the badge says so by its name. */
+		const bool dualFormat = dest.platform == QLatin1String("twitch") &&
+					dest.canvas == QLatin1String("both");
+		QLabel *canvas = new QLabel(dualFormat ? dsrText("Canvas.DualFormat") : dsrCanvasDisplay(dest.canvas));
 		canvas->setObjectName(QStringLiteral("canvasBadge"));
 		lineLayout->addWidget(canvas);
 	}
