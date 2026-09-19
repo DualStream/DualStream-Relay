@@ -244,6 +244,8 @@ QWidget *RelayDock::makeRow(const DsrDestination &dest, const DsrDestStatus *liv
 					dest.canvas == QLatin1String("both");
 		QLabel *canvas = new QLabel(dualFormat ? dsrText("Canvas.DualFormat") : dsrCanvasDisplay(dest.canvas));
 		canvas->setObjectName(QStringLiteral("canvasBadge"));
+		if (dualFormat)
+			canvas->setToolTip(dsrText("Canvas.DualFormatAudio"));
 		lineLayout->addWidget(canvas);
 	}
 

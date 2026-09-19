@@ -37,7 +37,22 @@ namespace {
  * same string, so it must never vary by locale or version. */
 const char *kCanvasName = "DualStream Vertical";
 
+/* Sources on the canvas are activated so they capture, and its scenes are
+ * kept by it. It does not mix its audio: OBS would sum every source shown on
+ * both canvases twice into every track, and the vertical stream takes its
+ * audio from a track of its own instead. */
+const uint32_t kCanvasFlags = ACTIVATE | SCENE_REF;
+
+/* The name a superseded canvas carries while its scenes move out. */
+const char *kRetiredCanvasName = "DualStream Vertical (retired)";
+
 VerticalCanvas *singleton = nullptr;
+
+bool collectSceneRefs(void *param, obs_source_t *source)
+{
+	static_cast<QVector<obs_source_t *> *>(param)->append(obs_source_get_ref(source));
+	return true;
+}
 
 void portraitVideoInfo(struct obs_video_info *ovi)
 {
@@ -113,7 +128,7 @@ void VerticalCanvas::setEnabled(bool on)
 	if (on) {
 		struct obs_video_info ovi;
 		portraitVideoInfo(&ovi);
-		canvas = obs_frontend_add_canvas(kCanvasName, &ovi, PROGRAM);
+		canvas = obs_frontend_add_canvas(kCanvasName, &ovi, kCanvasFlags);
 		if (!canvas) {
 			obs_log(LOG_ERROR, "vertical canvas could not be created");
 			return;
@@ -178,6 +193,15 @@ void VerticalCanvas::setHasPortraitDestinations(bool has)
 		return;
 	hasPortraitDests = has;
 	maybeStartOutput();
+	emit changed();
+}
+
+void VerticalCanvas::setHasDualFormatDestination(bool has)
+{
+	if (hasDualFormatDest == has)
+		return;
+	hasDualFormatDest = has;
+	emit changed();
 }
 
 /* Pick up a canvas the scene collection already carries. The frontend
@@ -189,7 +213,13 @@ void VerticalCanvas::adopt()
 	teardown();
 
 	canvas = obs_get_canvas_by_name(kCanvasName);
+	/* A replacement that was cut short leaves the canvas under its
+	 * retiring name; it is picked up and the replacement finished. */
+	if (!canvas)
+		canvas = obs_get_canvas_by_name(kRetiredCanvasName);
 	if (canvas) {
+		if (obs_canvas_get_flags(canvas) & MIX_AUDIO)
+			canvas = rebuiltWithoutAudioMix(canvas);
 		ensureVideo();
 		reconcileScenes();
 		hookCurrentTransition();
@@ -201,11 +231,54 @@ void VerticalCanvas::adopt()
 	emit changed();
 }
 
-/* A layout pass that had to wait for the mixes to go idle, or for a source
- * to report its size, gets another go at the moments that change either. */
-void VerticalCanvas::retryDeferredLayouts()
+/* Earlier releases created the canvas as a program canvas, which also mixes
+ * its audio: every source shown on both canvases was summed twice into every
+ * track. The flags are saved with the collection and cannot be changed in
+ * place, so such a canvas is replaced once, with its scenes moved across.
+ * Not while an output runs, since the old canvas may be feeding it; the
+ * next idle moment does it. */
+obs_canvas_t *VerticalCanvas::rebuiltWithoutAudioMix(obs_canvas_t *old)
 {
-	if (canvas && layoutsDeferred)
+	rebuildPending = obs_video_active();
+	if (rebuildPending) {
+		obs_log(LOG_INFO, "vertical canvas keeps mixing audio until no output is active");
+		return old;
+	}
+
+	struct obs_video_info ovi;
+	portraitVideoInfo(&ovi);
+	obs_canvas_set_name(old, kRetiredCanvasName);
+	obs_canvas_t *fresh = obs_frontend_add_canvas(kCanvasName, &ovi, kCanvasFlags);
+	if (!fresh) {
+		obs_canvas_set_name(old, kCanvasName);
+		obs_log(LOG_WARNING, "vertical canvas could not be replaced; it keeps mixing audio");
+		return old;
+	}
+
+	QVector<obs_source_t *> scenes;
+	obs_canvas_enum_scenes(old, collectSceneRefs, &scenes);
+	for (obs_source_t *scene : scenes) {
+		obs_canvas_move_scene(obs_scene_from_source(scene), fresh);
+		obs_source_release(scene);
+	}
+	obs_frontend_remove_canvas(old);
+	obs_canvas_release(old);
+	obs_frontend_save();
+	obs_log(LOG_INFO, "vertical canvas replaced without audio mixing; %d scene(s) moved", (int)scenes.size());
+	return fresh;
+}
+
+/* Work that had to wait for the mixes to go idle, or for a source to report
+ * its size, gets another go at the moments that change either. A canvas
+ * replacement is a fresh adoption, so everything hooked to the old one is
+ * let go of first. */
+void VerticalCanvas::retryDeferredWork()
+{
+	if (!canvas)
+		return;
+	if (rebuildPending && !obs_video_active())
+		adopt();
+	else if (layoutsDeferred)
 		reconcileScenes();
 }
 
@@ -268,11 +341,16 @@ void VerticalCanvas::handleFrontendEvent(enum obs_frontend_event event)
 		break;
 	case OBS_FRONTEND_EVENT_STREAMING_STOPPED:
 		maybeStartOutput();
-		retryDeferredLayouts();
+		retryDeferredWork();
 		break;
 	case OBS_FRONTEND_EVENT_RECORDING_STOPPED:
 	case OBS_FRONTEND_EVENT_VIRTUALCAM_STOPPED:
-		retryDeferredLayouts();
+		retryDeferredWork();
+		break;
+	case OBS_FRONTEND_EVENT_PROFILE_CHANGED:
+		/* The vertical stream's audio track is chosen from the profile's
+		 * output settings, so the docks read it again. */
+		emit changed();
 		break;
 	case OBS_FRONTEND_EVENT_STREAMING_STOPPING:
 		stopOutput(false);

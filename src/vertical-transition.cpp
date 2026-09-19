@@ -30,6 +30,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "vertical-canvas.hpp"
 
+#include <QMetaObject>
+
 #include <string.h>
 
 #include <obs-module.h>
@@ -101,11 +103,18 @@ void VerticalCanvas::hookMainTransition(obs_source_t *next)
 
 void VerticalCanvas::onChannelChange(void *data, calldata_t *cd)
 {
-	if (calldata_int(cd, "channel") != 0)
-		return;
-
 	VerticalCanvas *self = static_cast<VerticalCanvas *>(data);
-	self->hookMainTransition(static_cast<obs_source_t *>(calldata_ptr(cd, "source")));
+	const long long channel = calldata_int(cd, "channel");
+
+	if (channel == 0) {
+		self->hookMainTransition(static_cast<obs_source_t *>(calldata_ptr(cd, "source")));
+		return;
+	}
+
+	/* Every other channel of the main view is a global audio device. The
+	 * signal is raised with the channel lock held and before the channel
+	 * is set, so the announcement waits for the event loop. */
+	QMetaObject::invokeMethod(self, [self]() { emit self->audioDevicesChanged(); }, Qt::QueuedConnection);
 }
 
 void VerticalCanvas::onMainTransitionStart(void *data, calldata_t *cd)

@@ -145,5 +145,8 @@ QString dsrVerticalStyleSheet()
 #vertRow[selected="true"] { background: rgba(8, 142, 188, 40); }
 #vertName { font-weight: 500; }
 #dropLine { background: #F3490E; border-radius: 1px; }
+#vertAudioSection { border-top: 1px solid rgba(255, 255, 255, 25); }
+#vertAudioHeading { font-weight: 600; }
+#vertAudioWarning { color: #F3B14E; }
 )");
 }

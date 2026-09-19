@@ -130,6 +130,8 @@ DsrHttpReply runRequest(const QByteArray &verb, const QByteArray &url, const QBy
 	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
 	reply.status = (int)status;
 	reply.transportOk = result == CURLE_OK && status > 0;
+	if (!reply.transportOk)
+		reply.transportError = QByteArray(result == CURLE_OK ? "no status" : curl_easy_strerror(result));
 	reply.body = QByteArray(body.data(), int(body.size()));
 
 	curl_slist_free_all(headers);

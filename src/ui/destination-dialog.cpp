@@ -66,7 +66,12 @@ void DestinationDialog::fillCanvasCombo(QComboBox *combo, const QString &platfor
 	combo->clear();
 	for (const QString &canvas : allowed) {
 		const bool dualFormat = twitch && canvas == QLatin1String("both");
-		combo->addItem(dualFormat ? dsrText("Canvas.DualFormat") : dsrCanvasDisplay(canvas), canvas);
+		/* The same words the rows show as a badge, capitalised here
+		 * the way a list of choices reads. */
+		QString label = dualFormat ? dsrText("Canvas.DualFormat") : dsrCanvasDisplay(canvas);
+		if (!label.isEmpty())
+			label[0] = label[0].toUpper();
+		combo->addItem(label, canvas);
 	}
 
 	int index = combo->findData(selected);

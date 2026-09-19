@@ -45,6 +45,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 struct DsrHttpReply {
 	int status = 0;
 	bool transportOk = false;
+	/* libcurl's own words when the transport failed, for the log. */
+	QByteArray transportError;
 	QByteArray body;
 };
 

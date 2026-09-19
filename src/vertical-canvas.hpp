@@ -68,6 +68,14 @@ public:
 	 * destination takes the portrait canvas. Both gate the output. */
 	void setPortraitTarget(const QString &server, const QString &key);
 	void setHasPortraitDestinations(bool has);
+	bool hasPortraitDestinations() const { return hasPortraitDests; }
+
+	/* Also pushed by the relay dock: an enabled Twitch destination on both
+	 * canvases. Dual format is served from the landscape contribution as
+	 * one broadcast with one audio, so the vertical audio choices do not
+	 * reach it, and the sources dock says so. */
+	void setHasDualFormatDestination(bool has);
+	bool hasDualFormatDestination() const { return hasDualFormatDest; }
 
 	/* Where a direct publish is in its life. Connecting and disconnecting
 	 * both take a moment on RTMP, and a control that says nothing during
@@ -128,13 +136,17 @@ signals:
 	void publishingChanged(bool active);
 	/* A direct publish moved between idle, starting, live and stopping. */
 	void directPhaseChanged();
+	/* A global audio device (Settings, Audio) was added, removed or
+	 * replaced. */
+	void audioDevicesChanged();
 
 private:
 	void adopt();
 	void teardown();
 	void ensureVideo();
 	void reconcileScenes();
-	void retryDeferredLayouts();
+	void retryDeferredWork();
+	obs_canvas_t *rebuiltWithoutAudioMix(obs_canvas_t *old);
 	void seedCounterpart(obs_source_t *landscapeScene);
 	void connectSceneSignals(obs_source_t *landscapeScene);
 	void disconnectAllSceneSignals();
@@ -179,6 +191,10 @@ private:
 	 * reporting its size. */
 	bool layoutsDeferred = false;
 
+	/* The adopted canvas still mixes its audio and waits for the mixes to
+	 * go idle before it is replaced. */
+	bool rebuildPending = false;
+
 	/* The canvas program channel holds this, not a scene: it is a private
 	 * copy of OBS's own transition, driven from the same signal, so a scene
 	 * switch animates on both mixes together. */
@@ -194,6 +210,7 @@ private:
 	QString portraitServer;
 	QString portraitKey;
 	bool hasPortraitDests = false;
+	bool hasDualFormatDest = false;
 
 	obs_output_t *output = nullptr;
 	obs_encoder_t *videoEncoder = nullptr;

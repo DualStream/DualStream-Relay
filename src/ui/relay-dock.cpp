@@ -89,18 +89,19 @@ void RelayDock::refreshUi()
 	 * contribution as dual format and takes nothing from that ingest. */
 	if (VerticalCanvas::instance()) {
 		bool portrait = false;
+		bool dual = false;
 		for (const DsrDestination &dest : destinations->list()) {
 			if (!dest.enabled)
 				continue;
 			const bool dualFormat = dest.platform == QLatin1String("twitch") &&
 						dest.canvas == QLatin1String("both");
-			if (!dualFormat &&
-			    (dest.canvas == QLatin1String("portrait") || dest.canvas == QLatin1String("both"))) {
+			if (dualFormat)
+				dual = true;
+			else if (dest.canvas == QLatin1String("portrait") || dest.canvas == QLatin1String("both"))
 				portrait = true;
-				break;
-			}
 		}
 		VerticalCanvas::instance()->setHasPortraitDestinations(portrait);
+		VerticalCanvas::instance()->setHasDualFormatDestination(dual);
 		/* Publishing straight to an RTMP server is what an account
 		 * without a subscription gets instead of the relay. */
 		VerticalCanvas::instance()->setDirectAllowed(state == State::Lapsed);

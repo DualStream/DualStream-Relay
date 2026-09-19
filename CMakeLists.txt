@@ -78,6 +78,7 @@ target_sources(
     src/relay-stream-watch.c
     src/encoder-choice.cpp
     src/ladder-state.cpp
+    src/vertical-audio.cpp
     src/relay-auth.cpp
     src/relay-destinations.cpp
     src/relay-direct.cpp
@@ -112,6 +113,7 @@ target_sources(
     src/ui/vertical-preview-menu.cpp
     src/ui/vertical-dock.cpp
     src/ui/vertical-sources-dock.cpp
+    src/ui/vertical-audio-toggle.cpp
     src/ui/destination-dialog.cpp
     src/ui/destination-dialog-add.cpp
     src/ui/settings-dialog.cpp

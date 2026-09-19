@@ -220,7 +220,9 @@ bool dsr_ladder_prepare(struct dsr_ladder_spec *out, const volatile bool *abort_
 						      QJsonDocument(body).toJson(QJsonDocument::Compact), true, auth,
 						      [abort_flag]() { return abort_flag && *abort_flag; });
 	if (!reply.transportOk) {
-		setError(error, error_len, text("Ladder.Unreachable"));
+		obs_log(LOG_WARNING, "dual format prepare could not reach %s: %s", base.constData(),
+			reply.transportError.constData());
+		setError(error, error_len, text("Ladder.Unreachable").arg(QString::fromUtf8(reply.transportError)));
 		return false;
 	}
 
@@ -229,8 +231,15 @@ bool dsr_ladder_prepare(struct dsr_ladder_spec *out, const volatile bool *abort_
 		QString code = json.value(QStringLiteral("code")).toString();
 		if (code.isEmpty())
 			code = QString::number(reply.status);
-		obs_log(LOG_WARNING, "dual format prepare refused: %s", code.toUtf8().constData());
-		setError(error, error_len, text("Ladder.Refused").arg(code));
+		const QString message = json.value(QStringLiteral("message")).toString().trimmed();
+		obs_log(LOG_WARNING, "dual format prepare refused: %s (%s)", code.toUtf8().constData(),
+			message.toUtf8().constData());
+		/* Twitch's own refusal names what it objected to, in words meant
+		 * for the streamer, and is the one that gets shown as is. */
+		if (code == QLatin1String("TWITCH_DECLINED") && !message.isEmpty())
+			setError(error, error_len, text("Ladder.Declined").arg(message));
+		else
+			setError(error, error_len, text("Ladder.Refused").arg(code));
 		return false;
 	}
 

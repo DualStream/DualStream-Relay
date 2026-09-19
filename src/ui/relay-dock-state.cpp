@@ -293,17 +293,27 @@ QString RelayDock::summaryText(State state) const
 
 /* Cheap fingerprint of everything outside the plugin that changes what the
  * dock should render: where the stream output points, which key it carries,
- * and whether OBS has a connected account. All local reads, no network. */
+ * whether OBS has a connected account, and the video and encoder settings
+ * the preflight judges. All local reads, no network. */
 QString RelayDock::environmentSignature() const
 {
 	char *server = dsr_route_current_server();
 	char *key = dsr_route_current_key();
 	char *account = dsr_get_connected_account();
 
-	const QString value = QStringLiteral("%1|%2|%3")
+	struct obs_video_info video = {};
+	obs_get_video_info(&video);
+	struct dsr_encoder_settings encoder = {};
+	dsr_encoder_read(&encoder);
+
+	const QString value = QStringLiteral("%1|%2|%3|%4/%5|%6|%7")
 				      .arg(QString::fromUtf8(server ? server : ""))
 				      .arg(QString::fromUtf8(key ? key : ""))
-				      .arg(QString::fromUtf8(account ? account : ""));
+				      .arg(QString::fromUtf8(account ? account : ""))
+				      .arg(video.fps_num)
+				      .arg(video.fps_den)
+				      .arg(encoder.video_bitrate_kbps)
+				      .arg(encoder.keyint_sec);
 
 	bfree(server);
 	bfree(key);

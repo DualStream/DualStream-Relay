@@ -174,6 +174,16 @@ QString RelayDock::blockingSetupIssue() const
 			return QString(dsrText("Warning.AudioCodec")).arg(name.toUpper());
 	}
 
+	/* Twitch dictates the dual format ladder and refuses a fractional
+	 * frame rate outright, at the moment Start Streaming is pressed. */
+	if (ladderWanted()) {
+		struct obs_video_info video;
+		if (obs_get_video_info(&video) && video.fps_den > 0 && video.fps_num % video.fps_den != 0) {
+			const double fps = (double)video.fps_num / (double)video.fps_den;
+			return QString(dsrText("Warning.FractionalFps")).arg(QString::number(fps, 'f', 2));
+		}
+	}
+
 	/* The relay's own gates. A keyframe more than a few seconds apart or a
 	 * bitrate over the refusal line drops the stream to the relay's
 	 * re-encode for the whole session. Where the relay service gets to set

@@ -141,12 +141,19 @@ static void ladder_destroy(void *data)
 	bfree(o);
 }
 
+/* A start that did not get there. One that was told to stop meanwhile is
+ * not a failure and raises no dialog: the stop that asked for it reports a
+ * plain stop once this thread is joined. */
 static void fail_start(struct dsr_ladder_output *o, int code, const char *error)
 {
-	obs_log(LOG_WARNING, "dual format output could not start: %s", error);
 	release_transport(o);
-	obs_output_set_last_error(o->output, error);
-	obs_output_signal_stop(o->output, code);
+	if (o->abort_start) {
+		obs_log(LOG_INFO, "dual format output start called off: %s", error);
+	} else {
+		obs_log(LOG_WARNING, "dual format output could not start: %s", error);
+		obs_output_set_last_error(o->output, error);
+		obs_output_signal_stop(o->output, code);
+	}
 	finish_start(o);
 }
 

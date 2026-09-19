@@ -38,10 +38,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <functional>
 
+#include "../vertical-audio.hpp"
 #include "../vertical-canvas.hpp"
 #include "dsr-source-icon.hpp"
 #include "dsr-ui-common.hpp"
 #include "dsr-widgets.hpp"
+#include "vertical-audio-toggle.hpp"
 #include "vertical-common.hpp"
 
 namespace {
@@ -81,6 +83,7 @@ VerticalSourcesDock::VerticalSourcesDock(VerticalCanvas *manager, QWidget *paren
 	connect(manager, &VerticalCanvas::selectionChanged, this, &VerticalSourcesDock::updateHighlights);
 	connect(manager, &VerticalCanvas::itemVisibilityChanged, this, &VerticalSourcesDock::updateVisibility);
 	connect(manager, &VerticalCanvas::itemLockChanged, this, &VerticalSourcesDock::updateLock);
+	connect(manager, &VerticalCanvas::audioDevicesChanged, this, &VerticalSourcesDock::rebuildRows);
 
 	setStyleSheet(dsrVerticalStyleSheet());
 	setMinimumWidth(200);
@@ -251,12 +254,19 @@ void VerticalSourcesDock::rebuildRows()
 
 	QVector<obs_sceneitem_t *> items;
 	obs_scene_enum_items(obs_scene_from_source(sceneSource), dsrCollectSceneItems, &items);
-	obs_source_release(sceneSource);
 
 	/* Topmost first, matching how the stack reads visually. */
 	for (int i = items.size() - 1; i >= 0; i--)
 		listLayout->addWidget(makeRow(items[i], keepSelected));
 
+	/* What the vertical stream carries of the scene's audio, under the
+	 * rows. The track is a profile setting, read afresh each time. */
+	const DsrVerticalAudioTrack track = dsrVerticalAudioTrack();
+	const DsrVerticalDelivery delivery = {manager->hasPortraitDestinations(), manager->hasDualFormatDestination()};
+	QWidget *audioSection = dsrMakeVerticalAudioSection(sceneSource, track.mixer, track.dedicated, delivery);
+	obs_source_release(sceneSource);
+	if (audioSection)
+		listLayout->addWidget(audioSection);
 	listLayout->addStretch(1);
 
 	for (obs_sceneitem_t *item : items)

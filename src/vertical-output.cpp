@@ -33,6 +33,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "encoder-choice.hpp"
 #include "relay-limits.h"
 #include "relay-output.h"
+#include "vertical-audio.hpp"
 
 namespace {
 
@@ -150,9 +151,13 @@ bool VerticalCanvas::startOutput(const QString &server, const QString &key, bool
 
 	obs_service_apply_encoder_settings(service, videoSettings, audioSettings);
 
+	/* The vertical stream's own track, so a source switched off in the
+	 * vertical sources panel is left out here and nowhere else. */
+	const DsrVerticalAudioTrack track = dsrVerticalAudioTrack();
 	const char *encoderId = dsrPickH264EncoderId();
 	videoEncoder = obs_video_encoder_create(encoderId, "dsr_vertical_video", videoSettings, nullptr);
-	audioEncoder = obs_audio_encoder_create("ffmpeg_aac", "dsr_vertical_audio", audioSettings, 0, nullptr);
+	audioEncoder = obs_audio_encoder_create("ffmpeg_aac", "dsr_vertical_audio", audioSettings, (size_t)track.mixer,
+						nullptr);
 	obs_data_release(videoSettings);
 	obs_data_release(audioSettings);
 
@@ -161,6 +166,8 @@ bool VerticalCanvas::startOutput(const QString &server, const QString &key, bool
 		releaseOutput();
 		return false;
 	}
+	obs_log(LOG_INFO, "portrait output takes audio track %d%s", track.mixer + 1,
+		track.dedicated ? "" : " (shared with the stream; every track is in use)");
 
 	obs_encoder_set_video(videoEncoder, video);
 	obs_encoder_set_audio(audioEncoder, obs_get_audio());

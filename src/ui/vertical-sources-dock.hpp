@@ -29,8 +29,9 @@ class QVBoxLayout;
 class VerticalCanvas;
 
 /* One row per source of the current scene's portrait counterpart: visibility
- * switch, arrangement actions, z-order. Docks beside OBS's own Sources panel
- * and shares its selection with the preview through the canvas manager. */
+ * switch, arrangement actions, z-order, and under the rows the list of what
+ * is heard on the vertical stream. Docks beside OBS's own Sources panel and
+ * shares its selection with the preview through the canvas manager. */
 class VerticalSourcesDock : public QWidget {
 	Q_OBJECT
 
