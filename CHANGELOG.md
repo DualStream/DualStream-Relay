@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.3.1
+
+### Mobile audio
+
+- You can now choose what is heard on mobile. The DualStream Mobile Sources
+  panel ends with a list headed "Heard on mobile": every source in the scene
+  that has audio and every audio device from Settings, Audio, each with a
+  check box. Everything is ticked until you untick it, and your desktop
+  stream is never affected. Twitch dual format is one broadcast, so its
+  mobile picture keeps the desktop stream's audio; the list says so whenever
+  a dual format destination is on.
+
+### Changed
+
+- One name for each side of your stream everywhere in the plugin: Desktop
+  and Mobile. The panels formerly called DualStream Vertical and DualStream
+  Vertical Sources are now DualStream Mobile and DualStream Mobile Sources,
+  a destination sends to Desktop, Mobile or Desktop and mobile, and no note
+  speaks of vertical, portrait or landscape any more.
+
+### Fixed
+
+- When Twitch declines dual format, the panel and OBS's error dialog now
+  show Twitch's own reason instead of a bare code. A fractional frame rate
+  such as 29.97, which Twitch refuses, is called out before you go live.
+- Any source shown on both desktop and mobile (a media source, a browser
+  source, a game or window capture with audio) was heard twice, about 6 dB
+  louder, on every stream and recording while Mobile was on. Mobile no longer
+  mixes its own audio into your streams; an existing setup is rebuilt once,
+  the next time nothing is streaming or recording.
+
 ## 0.3.0
 
 ### Twitch dual format

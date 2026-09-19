@@ -86,17 +86,18 @@ asks you to confirm first, so a stray click cannot knock a platform offline.
 **Live status for every platform**, including the exact error a platform
 gave if it turned the stream away.
 
-**A vertical version of your scenes.** For TikTok, Reels and YouTube Shorts,
-which want a tall video rather than a wide one. You get a second canvas with
-a 9:16 counterpart of every scene. It shares the same cameras and sources as
-your normal scenes, but you arrange them separately, and you choose which
-ones show up. It is sent alongside your normal stream, not instead of it.
+**A mobile version of your scenes.** For TikTok, Reels and YouTube Shorts,
+which want a tall video rather than a wide one. Turn on Mobile and you get a
+tall counterpart of every scene. It shares the same cameras and sources as
+your desktop scenes, but you arrange them separately, and you choose which
+ones show up and which are heard. It is sent alongside your desktop stream,
+not instead of it.
 
-**Twitch in both shapes at once.** With the vertical canvas on, set your
-Twitch destination to dual format and Twitch gets your wide stream and your
-tall one in the same broadcast, so viewers holding a phone upright see the
-tall one. Every version Twitch asks for is encoded on your machine and sent
-on the one connection you already have to DualStream.
+**Twitch on desktop and mobile at once.** With Mobile on, set your Twitch
+destination to dual format and Twitch gets your desktop stream and your
+mobile one in the same broadcast, so viewers holding a phone upright see the
+mobile one. Every version Twitch asks for is encoded on your machine and
+sent on the one connection you already have to DualStream.
 
 **You never type your password into OBS.** Signing in happens in your
 browser.
@@ -157,7 +158,7 @@ tooling that make plugins like this one possible. Being built on OBS Studio
 does not make this plugin part of it: DualStream Relay is developed
 independently, and the OBS Project neither endorses nor supports it.
 
-Two files are copied unchanged from OBS Studio, so the vertical canvas draws
+Two files are copied unchanged from OBS Studio, so the mobile preview draws
 its out-of-bounds shading and spacing guides exactly the way the main OBS
 preview does: `data/images/overflow.png` and
 `data/effects/striped-line.effect`. They are Copyright (C) OBS Studio
