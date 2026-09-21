@@ -44,17 +44,30 @@ works. That is being sorted out.
    and download the file ending in `-windows-x64.zip`.
 2. Close OBS if it is open.
 3. Right-click the downloaded file and choose **Extract All**.
-4. Open the extracted folder. Inside you will find a folder called
-   `obs-plugins` and a folder called `data`.
+4. Open the extracted folder. Inside is one folder called
+   `obs-dualstream-relay`.
 5. Press **Windows key + R**, type `%ProgramData%\obs-studio\plugins` and
-   press Enter. If a folder called `obs-dualstream-relay` is not already
-   there, create one and open it.
-6. Copy the `obs-plugins` and `data` folders from step 4 into it.
+   press Enter.
+6. Copy the `obs-dualstream-relay` folder from step 4 into that window. If
+   Windows asks, replace the files already there.
 7. Open OBS again.
 
-A panel called **DualStream Relay** appears the first time. If you ever
-close it and want it back, look under the **Docks** menu at the top of OBS,
-or under **Tools**.
+When it is in the right place, the file
+`%ProgramData%\obs-studio\plugins\obs-dualstream-relay\bin\64bit\obs-dualstream-relay.dll`
+exists. A panel called **DualStream Relay** appears the first time. If you
+ever close it and want it back, look under the **Docks** menu at the top of
+OBS, or under **Tools**.
+
+**Updating.** Same steps; replacing the files is the update. If OBS keeps
+showing an older version afterwards, an old copy is loading from OBS's own
+folder: delete `C:\Program Files\obs-studio\obs-plugins\64bit\obs-dualstream-relay.dll`
+and the folder `C:\Program Files\obs-studio\data\obs-plugins\obs-dualstream-relay`
+if they exist, then start OBS again. If OBS was installed somewhere else,
+through Steam for example, look inside that OBS folder instead: right-click
+the OBS shortcut, choose **Open file location**, and go up to the folder
+that holds `obs-plugins`. The OBS log line
+`[obs-dualstream-relay] plugin loaded successfully (version ...)` says which
+version is running.
 
 ## Using it for the first time
 
