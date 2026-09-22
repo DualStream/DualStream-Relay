@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -66,7 +67,17 @@ struct dsr_relay_limits {
 	struct dsr_canvas_limits portrait;
 };
 
+/* The figures in force: the relay's, once it has handed them over with the
+ * ingest target, else the plugin's own. */
 const struct dsr_relay_limits *dsr_limits_get(void);
+
+/* The plugin's own figures, the ones every account clears. */
+const struct dsr_relay_limits *dsr_limits_defaults(void);
+
+/* Take the figures the relay resolved for this account; everything that
+ * reads them sees the new ones from the moment this returns. */
+void dsr_limits_apply(const struct dsr_relay_limits *resolved);
+bool dsr_limits_from_relay(void);
 
 #ifdef __cplusplus
 }

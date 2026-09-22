@@ -203,12 +203,15 @@ void RelayDock::refreshUi()
 				 * disagree. Silent when none applies, which
 				 * is the common case. */
 				const QString ladder = state == State::Live ? ladderNote() : QString();
+				const QString shortfall = state == State::Live ? ladderShortfallNote() : QString();
 				const QString restart = restartNote();
 				const QString note = connectedAccountNote();
 				QString mobileText;
 				QString mobileAction;
 				std::function<void()> mobileFn;
-				if (!ladder.isEmpty())
+				if (!shortfall.isEmpty())
+					setBanner(shortfall, "warn", QString(), nullptr);
+				else if (!ladder.isEmpty())
 					setBanner(ladder, "info", QString(), nullptr);
 				else if (!restart.isEmpty())
 					setBanner(restart, "warn", QString(), nullptr);

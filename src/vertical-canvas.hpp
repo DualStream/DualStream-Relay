@@ -21,6 +21,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #pragma once
 
 #include <QHash>
+#include <QMutex>
 #include <QObject>
 #include <QString>
 
@@ -146,7 +147,10 @@ private:
 	void ensureVideo();
 	void reconcileScenes();
 	void retryDeferredWork();
-	obs_canvas_t *rebuiltWithoutAudioMix(obs_canvas_t *old);
+	void replaceCanvas(const char *reason, bool deferWhileInUse);
+	bool canvasInUse() const;
+	void setCanvasHandle(obs_canvas_t *next);
+	void forgetLadderEncoders();
 	void seedCounterpart(obs_source_t *landscapeScene);
 	void connectSceneSignals(obs_source_t *landscapeScene);
 	void disconnectAllSceneSignals();
@@ -185,15 +189,19 @@ private:
 	static void onChannelChange(void *data, calldata_t *cd);
 	static void onMainTransitionStart(void *data, calldata_t *cd);
 
+	/* The handle is read from the stream output's start thread as well as
+	 * this one, so every change to it and every reference taken from it
+	 * goes through the lock. */
+	mutable QMutex canvasMutex;
 	obs_canvas_t *canvas = nullptr;
 
 	/* A layout migration is waiting on the mixes going idle or on a source
 	 * reporting its size. */
 	bool layoutsDeferred = false;
 
-	/* The adopted canvas still mixes its audio and waits for the mixes to
-	 * go idle before it is replaced. */
-	bool rebuildPending = false;
+	/* The adopted canvas mixes its audio and is still feeding a stream;
+	 * it is replaced once that stream ends. */
+	bool replacePending = false;
 
 	/* The canvas program channel holds this, not a scene: it is a private
 	 * copy of OBS's own transition, driven from the same signal, so a scene

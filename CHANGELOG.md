@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.3.2
+
+### Dual format
+
+- Twitch can ask for the mobile picture in HEVC, and for some channels it
+  does so at 60 fps whatever it is told. The plugin now offers HEVC when
+  this computer has a hardware HEVC encoder, encodes every rung in the codec
+  Twitch dictated, and carries HEVC in the contribution. A computer without
+  an HEVC encoder is asked for the desktop ladder alone instead.
+- Start Streaming no longer fails over the ladder. Whatever goes wrong in
+  preparing dual format, the stream starts: with the desktop ladder only, or
+  with OBS's own encoder alone, and the panel says what was left out and why
+  while you are live. Twitch's own reason is shown when it declined.
+
+### Mobile
+
+- The mobile preview showed a black canvas, and the mobile stream never
+  started, when OBS already had an output running as it loaded the scene
+  collection: a virtual camera or NDI feed started at launch, a recording,
+  anything. OBS will not give a loaded canvas its video mix while any output
+  runs, so the mobile canvas is now rebuilt with its mix in place instead.
+- The mobile preview went white after its dock was floated, docked or moved
+  to another screen. The preview now follows its window through those moves.
+- OBS could crash a moment after Start Streaming with a mobile destination
+  on: a second start request arriving while the mobile output was still
+  connecting tore the first one down mid-connect.
+- The mobile stream now goes out at the bitrate your desktop stream is
+  tuned to, capped by the relay's figure for it, instead of a fixed
+  6000 kbps. With both canvases on, your upload carries twice the desktop
+  rate; before, it carried the desktop rate plus 6000.
+- The panel now states the total upload both canvases take while a mobile
+  destination is on, and the standby banner says when the cause is an
+  upload that cannot keep up rather than a dropped connection.
+
+### YouTube
+
+- A stream you scheduled in YouTube Studio is now the one that goes live,
+  with its own title, description, privacy and ad settings, instead of a
+  new broadcast called "DualStream Live" with ads off beside it. The mobile
+  broadcast takes the same title and settings. The destination dialog says
+  so, and its own fields are overrides.
+- Saving a YouTube destination no longer drops the settings the desktop app
+  stored on it, and privacy can be left as set on YouTube instead of being
+  forced to Public on every save.
+
+### Relay
+
+- The bitrate and keyframe figures in the panel's notes and the tune dialog
+  now come from the relay, resolved for your account: a Twitch partner's
+  line sits higher than everyone else's and is no longer flagged.
+- A destination that is live but not getting what you sent, because the
+  relay had to re-encode it, dual format was dropped, or a YouTube latency
+  setting caps it, now says so under its row in plain words.
+- The panel showed a destination as rejected while it was live, for the
+  whole stream. The relay keeps a status row per attempt to carry a
+  destination and the panel took the first one; it now shows the attempt
+  that is running. The live and issue counts in the summary follow.
+
 ## 0.3.1
 
 ### Mobile audio

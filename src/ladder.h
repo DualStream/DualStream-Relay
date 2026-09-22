@@ -54,6 +54,9 @@ struct dsr_ladder_rendition {
 	uint32_t fps_den;
 	int bitrate_kbps;
 	int keyint_sec;
+	/* Twitch dictates the codec per rung: H.264, or HEVC where it wants
+	 * one and the machine offered it. */
+	bool hevc;
 };
 
 /* One prepared ladder. Rendition order is the contract: index i travels on
@@ -83,10 +86,35 @@ uint64_t dsr_ladder_current_session(void);
  * change, so the output's own thread never touches the account object. */
 void dsr_ladder_set_auth(const char *api_base, const char *bearer);
 
+/* What preparing a session's ladder came to. The stream starts whatever the
+ * answer: a ladder that could not be had, in whole or in part, means less
+ * goes to Twitch, never that Start Streaming fails. */
+enum dsr_ladder_outcome {
+	/* The spec holds the ladder Twitch dictated, both canvases. */
+	DSR_LADDER_READY,
+	/* The spec holds a desktop-only ladder: Twitch asked for a mobile
+	 * picture this machine cannot encode, so it was asked again without
+	 * the mobile canvas. */
+	DSR_LADDER_DESKTOP_ONLY,
+	/* No ladder: OBS's own encoder goes out alone this session. */
+	DSR_LADDER_NONE,
+	/* The start was called off while asking. */
+	DSR_LADDER_ABORTED,
+};
+
 /* Ask the website for the ladder. Blocking, meant for the output's start
- * thread; abort_flag ends the wait early. On failure `error` carries text fit
- * for the user. */
-bool dsr_ladder_prepare(struct dsr_ladder_spec *out, const volatile bool *abort_flag, char *error, size_t error_len);
+ * thread; abort_flag ends the wait early. Anything short of READY leaves a
+ * note for the dock, in words fit for the streamer, saying what was left
+ * out and why. */
+enum dsr_ladder_outcome dsr_ladder_prepare(struct dsr_ladder_spec *out, const volatile bool *abort_flag);
+
+/* Take a prepared configuration down again, because the session will not
+ * send the ladder after all. Blocking, abortable like the prepare. */
+void dsr_ladder_discard(const volatile bool *abort_flag);
+
+/* The note the last prepare left for this session, empty when there is
+ * none. Cleared when a session begins. */
+size_t dsr_ladder_note(char *buf, size_t len);
 
 /* The encoders behind a ladder: one per rendition, on the right canvas, at
  * the right size, all keyframing together. Attached to the output in ladder
@@ -96,10 +124,19 @@ struct dsr_ladder_encoders *dsr_ladder_attach(obs_output_t *output, const struct
 					      size_t error_len);
 void dsr_ladder_detach(obs_output_t *output, struct dsr_ladder_encoders *set);
 
+/* Let go of the encoders a finished session left on the stream output.
+ * They point at the mobile canvas's video mix, so the canvas calls this
+ * before that mix goes. An output that is not the ladder's, or one with a
+ * session under way, is left alone. */
+void dsr_ladder_output_forget_session(obs_output_t *output);
+
 /* What the output is doing, for the dock. A prepared ladder leaves a
  * configuration on the website that must be removed once the session it
- * was made for is over. */
+ * was made for is over. A fallback after the ladder was prepared, when its
+ * encoders could not be made, is reported the same way a prepare that
+ * fell short is. */
 void dsr_ladder_report_active(size_t renditions);
+void dsr_ladder_report_fallback(const char *reason);
 size_t dsr_ladder_active_renditions(void);
 void dsr_ladder_note_prepared(bool prepared);
 bool dsr_ladder_prepared_pending(void);

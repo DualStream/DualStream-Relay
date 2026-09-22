@@ -78,6 +78,7 @@ target_sources(
     src/relay-stream-watch.c
     src/encoder-choice.cpp
     src/ladder-state.cpp
+    src/ladder-prepare.cpp
     src/vertical-audio.cpp
     src/relay-auth.cpp
     src/relay-destinations.cpp

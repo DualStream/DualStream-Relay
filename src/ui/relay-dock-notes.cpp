@@ -26,6 +26,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include <algorithm>
+
 #include "../ladder.h"
 #include "../relay-limits.h"
 #include "../relay-output.h"
@@ -59,8 +61,28 @@ QString RelayDock::outputMismatch() const
 	 * nothing; the relay refuses higher still, and that case is a blocker
 	 * rather than a note. */
 	const int high = limits.video_kbps * 4 / 3;
-	if (dsr_get_configured_bitrate_kbps() > high)
+	const int desktopKbps = dsr_get_configured_bitrate_kbps();
+	if (desktopKbps > high)
 		issues.append(QString(dsrText("Preflight.BitrateHigh")).arg(high));
+
+	/* A mobile destination doubles what OBS sends: Start Streaming
+	 * always carries the desktop canvas, and the mobile canvas goes out
+	 * beside it at the desktop rate, capped by the relay's figure for
+	 * it. An upload that carries one canvas well can be far short of
+	 * two, and the relay's re-encode of a broken picture is what that
+	 * looks like, so the total is stated where it can be acted on. */
+	VerticalCanvas *vertical = VerticalCanvas::instance();
+	if (vertical && vertical->hasPortraitDestinations() && desktopKbps > 0) {
+		const int audioKbps = limits.audio_kbps > 0 ? limits.audio_kbps : 160;
+		const int portraitCap = dsr_limits_get()->portrait.video_kbps;
+		const int mobileKbps = portraitCap > 0 ? std::min(desktopKbps, portraitCap) : desktopKbps;
+		const int desktopTotal = desktopKbps + audioKbps;
+		const int mobileTotal = mobileKbps + audioKbps;
+		issues.append(QString(dsrText("Preflight.UploadBoth"))
+				      .arg(desktopTotal + mobileTotal)
+				      .arg(desktopTotal)
+				      .arg(mobileTotal));
+	}
 
 	return issues.join(QStringLiteral(" "));
 }
@@ -128,6 +150,17 @@ QString RelayDock::ladderNote() const
 	if (renditions == 0)
 		return QString();
 	return QString(dsrText("Ladder.Active")).arg((int)renditions);
+}
+
+/* What this session is doing without, when the ladder could not be had in
+ * full. Start Streaming never fails over it; this is where it is said. */
+QString RelayDock::ladderShortfallNote() const
+{
+	/* Room for Twitch's own refusal text, which arrives whole. */
+	char note[2048];
+	if (dsr_ladder_note(note, sizeof(note)) == 0)
+		return QString();
+	return QString::fromUtf8(note);
 }
 
 /* OBS built this profile's outputs with a platform's Enhanced Broadcasting

@@ -60,6 +60,39 @@ QString dsrCanvasDisplay(const QString &canvas)
 	return dsrText("Canvas.Landscape");
 }
 
+namespace {
+/* The codes with plain words, and whether each is about a stream that is
+ * running rather than a refusal. */
+struct DestErrorWords {
+	const char *code;
+	bool running;
+};
+const DestErrorWords kDestErrorWords[] = {
+	{"PASSTHROUGH_UNFIT", true},     {"LADDER_NOT_HONOURED", true}, {"INGEST_UNREADABLE", true},
+	{"YT_LATENCY_CAPS_1080P", true}, {"PLAN_NO_RENDITION", false},
+};
+} // namespace
+
+QString dsrDestErrorText(const QString &code)
+{
+	for (const DestErrorWords &known : kDestErrorWords) {
+		if (code == QLatin1String(known.code)) {
+			const QByteArray key = QByteArray("DestError.") + known.code;
+			return dsrText(key.constData());
+		}
+	}
+	return QString();
+}
+
+bool dsrDestErrorAboutRunning(const QString &code)
+{
+	for (const DestErrorWords &known : kDestErrorWords) {
+		if (code == QLatin1String(known.code))
+			return known.running;
+	}
+	return false;
+}
+
 QFrame *dsrMakeSeparator()
 {
 	QFrame *line = new QFrame;

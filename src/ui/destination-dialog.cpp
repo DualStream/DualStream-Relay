@@ -158,6 +158,10 @@ void DestinationDialog::buildEditUi()
 	if (existing.platform == QLatin1String("youtube")) {
 		layout->addWidget(dsrMakeSeparator());
 		layout->addWidget(dsrMakeSectionHeader("Destinations.YouTubeMeta"));
+		QLabel *scheduled = new QLabel(dsrText("Destinations.YouTubeScheduled"));
+		scheduled->setObjectName(QStringLiteral("mutedText"));
+		scheduled->setWordWrap(true);
+		layout->addWidget(scheduled);
 
 		const QJsonObject meta = existing.metadata.value(QStringLiteral("youtube")).toObject();
 		QFormLayout *ytForm = new QFormLayout;
@@ -169,6 +173,7 @@ void DestinationDialog::buildEditUi()
 		ytDescription->setMaximumHeight(72);
 		ytForm->addRow(dsrText("Destinations.YouTubeDescription"), ytDescription);
 		ytPrivacy = new QComboBox;
+		ytPrivacy->addItem(dsrText("Destinations.Privacy.Inherit"), QString());
 		ytPrivacy->addItem(dsrText("Destinations.Privacy.Public"), QStringLiteral("public"));
 		ytPrivacy->addItem(dsrText("Destinations.Privacy.Unlisted"), QStringLiteral("unlisted"));
 		ytPrivacy->addItem(dsrText("Destinations.Privacy.Private"), QStringLiteral("private"));
@@ -224,18 +229,28 @@ void DestinationDialog::submitEdit()
 	}
 
 	if (ytLandscapeTitle) {
-		QJsonObject youtube;
-		if (!ytLandscapeTitle->text().trimmed().isEmpty())
-			youtube.insert(QStringLiteral("landscape_title"), ytLandscapeTitle->text().trimmed());
-		if (!ytPortraitTitle->text().trimmed().isEmpty())
-			youtube.insert(QStringLiteral("portrait_title"), ytPortraitTitle->text().trimmed());
-		if (!ytDescription->toPlainText().trimmed().isEmpty())
-			youtube.insert(QStringLiteral("description"), ytDescription->toPlainText().trimmed());
-		youtube.insert(QStringLiteral("privacy_status"), ytPrivacy->currentData().toString());
+		/* The relay replaces the metadata whole, and the desktop app keeps
+		 * fields of its own in it, so the fields here are laid over what
+		 * is stored and the rest travels back untouched. An emptied field
+		 * comes out; nothing is sent when nothing changed. */
+		const QJsonObject before = existing.metadata.value(QStringLiteral("youtube")).toObject();
+		QJsonObject youtube = before;
+		const auto put = [&youtube](const char *key, const QString &value) {
+			if (value.isEmpty())
+				youtube.remove(QLatin1String(key));
+			else
+				youtube.insert(QLatin1String(key), value);
+		};
+		put("landscape_title", ytLandscapeTitle->text().trimmed());
+		put("portrait_title", ytPortraitTitle->text().trimmed());
+		put("description", ytDescription->toPlainText().trimmed());
+		put("privacy_status", ytPrivacy->currentData().toString());
 
-		QJsonObject metadata;
-		metadata.insert(QStringLiteral("youtube"), youtube);
-		body.insert(QStringLiteral("metadata"), metadata);
+		if (youtube != before) {
+			QJsonObject metadata = existing.metadata;
+			metadata.insert(QStringLiteral("youtube"), youtube);
+			body.insert(QStringLiteral("metadata"), metadata);
+		}
 	}
 
 	if (body.isEmpty()) {

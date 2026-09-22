@@ -29,6 +29,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #define PROGRAM_NUMBER 1
 #define TRANSPORT_STREAM_ID 1
 #define STREAM_TYPE_H264 0x1B
+#define STREAM_TYPE_HEVC 0x24
 #define STREAM_TYPE_AAC 0x0F
 
 /* CRC-32/MPEG-2, as the tables carry it. */
@@ -106,7 +107,7 @@ bool dsr_ts_write_tables(struct dsr_ts_mux *mux)
 	pmt[11] = 0x00;
 	size_t at = 12;
 	for (size_t i = 0; i < mux->video_count; i++) {
-		pmt[at++] = STREAM_TYPE_H264;
+		pmt[at++] = mux->video_hevc[i] ? STREAM_TYPE_HEVC : STREAM_TYPE_H264;
 		pmt[at++] = 0xE0 | (uint8_t)(mux->video[i].pid >> 8);
 		pmt[at++] = (uint8_t)mux->video[i].pid;
 		pmt[at++] = 0xF0;

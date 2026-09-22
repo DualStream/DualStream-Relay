@@ -133,6 +133,7 @@ private:
 	/* Whether the next stream carries a Twitch dual format ladder. */
 	bool ladderWanted() const;
 	QString ladderNote() const;
+	QString ladderShortfallNote() const;
 	QString restartNote() const;
 	/* Hand the account's credentials to the dual format side, which makes
 	 * its own request from the output's thread. */

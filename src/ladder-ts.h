@@ -28,9 +28,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 extern "C" {
 #endif
 
-/* MPEG-TS writer for the relay contribution: up to ten H.264 video streams
- * and one AAC stream in one program, packed seven packets at a time into the
- * messages an SRT live link carries. Video i is pinned to PID 0x200 + i and
+/* MPEG-TS writer for the relay contribution: up to ten video streams, each
+ * H.264 or HEVC in byte-stream form, and one AAC stream in one program,
+ * packed seven packets at a time into the messages an SRT live link
+ * carries. Video i is pinned to PID 0x200 + i and
  * the audio to 0x101, which is the order the relay binds renditions by.
  *
  * Every timestamp handed in is in 90 kHz ticks and already offset so the
@@ -55,7 +56,7 @@ void dsr_ts_mux_destroy(struct dsr_ts_mux *mux);
  * keyframe that does not carry its own. The audio configuration is the two
  * byte AudioSpecificConfig; when the encoder gives none, the sample rate and
  * channel count stand in for it. */
-bool dsr_ts_mux_add_video(struct dsr_ts_mux *mux, const uint8_t *parameter_sets, size_t size);
+bool dsr_ts_mux_add_video(struct dsr_ts_mux *mux, const uint8_t *parameter_sets, size_t size, bool hevc);
 bool dsr_ts_mux_set_audio(struct dsr_ts_mux *mux, const uint8_t *config, size_t size, uint32_t sample_rate,
 			  size_t channels);
 

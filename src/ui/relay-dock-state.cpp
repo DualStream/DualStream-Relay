@@ -273,6 +273,16 @@ QString RelayDock::protectedBannerText() const
 
 	if (!obs_frontend_streaming_active())
 		return QString(dsrText("Protected.Resume")).arg(countdown);
+	/* OBS is streaming, so which side gave: its own output reconnecting
+	 * is a dropped connection. Otherwise the connection is up and what
+	 * arrives is too damaged to carry, which is an upload that cannot
+	 * keep up, and the relay holds the standby screen until the picture
+	 * flows again, with no clock on it. */
+	obs_output_t *stream = obs_frontend_get_streaming_output();
+	const bool reconnecting = stream && obs_output_reconnecting(stream);
+	obs_output_release(stream);
+	if (!reconnecting)
+		return dsrText("Protected.Starved");
 	return QString(dsrText("Protected.Banner")).arg(countdown);
 }
 QString RelayDock::summaryText(State state) const

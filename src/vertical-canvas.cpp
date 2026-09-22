@@ -28,6 +28,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include "ladder.h"
+#include "relay-output.h"
 #include "vertical-geometry.hpp"
 
 namespace {
@@ -89,14 +91,49 @@ VerticalCanvas::~VerticalCanvas()
 	singleton = nullptr;
 }
 
+/* An output exists from the moment it is asked to start until its stop is
+ * seen, and it counts as publishing for that whole span. OBS reports it
+ * active only once it has connected, and the plugin used to ask for a
+ * second start in that window: the start path releases the previous
+ * output first, and releasing one that is still connecting, encoders and
+ * all, brought OBS down (two crashes on 2026-09-21 as the ingest target
+ * fetch landed 150 ms into a mobile start). */
 bool VerticalCanvas::publishing() const
 {
-	return output && obs_output_active(output);
+	return output != nullptr;
 }
 
 obs_canvas_t *VerticalCanvas::canvasRef() const
 {
+	const QMutexLocker lock(&canvasMutex);
 	return canvas ? obs_canvas_get_ref(canvas) : nullptr;
+}
+
+void VerticalCanvas::setCanvasHandle(obs_canvas_t *next)
+{
+	const QMutexLocker lock(&canvasMutex);
+	canvas = next;
+}
+
+/* Whether anything is encoding from this canvas's mix, or may be about to:
+ * the mobile output, or the stream output from the moment it takes the
+ * service, since dual format builds its encoders on this mix during that
+ * window. Other outputs never read this mix. */
+bool VerticalCanvas::canvasInUse() const
+{
+	return publishing() || obs_frontend_streaming_active() || dsr_stream_output_engaged();
+}
+
+/* A dual format session leaves its encoders on the stream output between
+ * streams, and they point at this canvas's video mix. They go before the
+ * mix does. */
+void VerticalCanvas::forgetLadderEncoders()
+{
+	obs_output_t *stream = obs_frontend_get_streaming_output();
+	if (!stream)
+		return;
+	dsr_ladder_output_forget_session(stream);
+	obs_output_release(stream);
 }
 
 obs_source_t *VerticalCanvas::counterpartOf(obs_source_t *landscapeScene) const
@@ -128,11 +165,12 @@ void VerticalCanvas::setEnabled(bool on)
 	if (on) {
 		struct obs_video_info ovi;
 		portraitVideoInfo(&ovi);
-		canvas = obs_frontend_add_canvas(kCanvasName, &ovi, kCanvasFlags);
-		if (!canvas) {
+		obs_canvas_t *fresh = obs_frontend_add_canvas(kCanvasName, &ovi, kCanvasFlags);
+		if (!fresh) {
 			obs_log(LOG_ERROR, "vertical canvas could not be created");
 			return;
 		}
+		setCanvasHandle(fresh);
 		reconcileScenes();
 		hookCurrentTransition();
 		showCurrentScene();
@@ -143,11 +181,12 @@ void VerticalCanvas::setEnabled(bool on)
 		releaseOutput();
 		releaseTransition();
 		disconnectAllSceneSignals();
+		forgetLadderEncoders();
 		/* Let go of the handle before the canvas goes, so nothing
 		 * reading it from another thread can take a reference to a
 		 * canvas that is being destroyed. */
 		obs_canvas_t *going = canvas;
-		canvas = nullptr;
+		setCanvasHandle(nullptr);
 		obs_frontend_remove_canvas(going);
 		obs_canvas_release(going);
 		obs_log(LOG_INFO, "vertical canvas disabled");
@@ -206,21 +245,36 @@ void VerticalCanvas::setHasDualFormatDestination(bool has)
 
 /* Pick up a canvas the scene collection already carries. The frontend
  * recreates it at collection load, but deliberately without a video mix (the
- * saved form keeps only name, uuid and flags), so restoring the mix at our
- * dimensions is this plugin's job. */
+ * saved form keeps only name, uuid and flags), so giving it one at our
+ * dimensions is this plugin's job. libobs refuses to add a mix to an
+ * existing canvas while any output runs, whatever that output is on, and a
+ * streamer whose OBS starts an output on launch (a virtual camera, an NDI
+ * feed, a recording) would otherwise get a canvas that renders nothing. A
+ * canvas can always be created with its mix, so the scenes move to a fresh
+ * one instead. The same road serves a canvas saved by an earlier release as
+ * a program canvas, which mixes its audio into every track. */
 void VerticalCanvas::adopt()
 {
 	teardown();
 
-	canvas = obs_get_canvas_by_name(kCanvasName);
+	obs_canvas_t *found = obs_get_canvas_by_name(kCanvasName);
 	/* A replacement that was cut short leaves the canvas under its
 	 * retiring name; it is picked up and the replacement finished. */
-	if (!canvas)
-		canvas = obs_get_canvas_by_name(kRetiredCanvasName);
-	if (canvas) {
-		if (obs_canvas_get_flags(canvas) & MIX_AUDIO)
-			canvas = rebuiltWithoutAudioMix(canvas);
-		ensureVideo();
+	if (!found)
+		found = obs_get_canvas_by_name(kRetiredCanvasName);
+	if (found) {
+		setCanvasHandle(found);
+		const bool mixesAudio = (obs_canvas_get_flags(found) & MIX_AUDIO) != 0;
+		bool withoutVideo = false;
+		if (!mixesAudio && !obs_canvas_has_video(found)) {
+			struct obs_video_info ovi;
+			portraitVideoInfo(&ovi);
+			withoutVideo = !obs_canvas_reset_video(found, &ovi);
+		}
+		if (mixesAudio)
+			replaceCanvas("it was saved as a program canvas and mixes its audio into every track", true);
+		else if (withoutVideo)
+			replaceCanvas("an output is running and a video mix cannot be added to it in place", false);
 		reconcileScenes();
 		hookCurrentTransition();
 		showCurrentScene();
@@ -231,28 +285,28 @@ void VerticalCanvas::adopt()
 	emit changed();
 }
 
-/* Earlier releases created the canvas as a program canvas, which also mixes
- * its audio: every source shown on both canvases was summed twice into every
- * track. The flags are saved with the collection and cannot be changed in
- * place, so such a canvas is replaced once, with its scenes moved across.
- * Not while an output runs, since the old canvas may be feeding it; the
- * next idle moment does it. */
-obs_canvas_t *VerticalCanvas::rebuiltWithoutAudioMix(obs_canvas_t *old)
+/* Move every scene to a fresh canvas and let the old one go. Deferred, when
+ * asked, while the old canvas's mix is feeding a stream; a canvas with no
+ * mix feeds nothing and is replaced at once. */
+void VerticalCanvas::replaceCanvas(const char *reason, bool deferWhileInUse)
 {
-	rebuildPending = obs_video_active();
-	if (rebuildPending) {
-		obs_log(LOG_INFO, "vertical canvas keeps mixing audio until no output is active");
-		return old;
+	/* Only a canvas with a mix can be feeding anything; one loaded
+	 * without a mix is replaced at once whatever else is running. */
+	replacePending = deferWhileInUse && obs_canvas_has_video(canvas) && canvasInUse();
+	if (replacePending) {
+		obs_log(LOG_INFO, "vertical canvas kept until the stream ends: %s", reason);
+		return;
 	}
 
 	struct obs_video_info ovi;
 	portraitVideoInfo(&ovi);
+	obs_canvas_t *old = canvas;
 	obs_canvas_set_name(old, kRetiredCanvasName);
 	obs_canvas_t *fresh = obs_frontend_add_canvas(kCanvasName, &ovi, kCanvasFlags);
 	if (!fresh) {
 		obs_canvas_set_name(old, kCanvasName);
-		obs_log(LOG_WARNING, "vertical canvas could not be replaced; it keeps mixing audio");
-		return old;
+		obs_log(LOG_WARNING, "vertical canvas could not be replaced (%s)", reason);
+		return;
 	}
 
 	QVector<obs_source_t *> scenes;
@@ -261,14 +315,20 @@ obs_canvas_t *VerticalCanvas::rebuiltWithoutAudioMix(obs_canvas_t *old)
 		obs_canvas_move_scene(obs_scene_from_source(scene), fresh);
 		obs_source_release(scene);
 	}
+
+	forgetLadderEncoders();
+	setCanvasHandle(fresh);
+	/* Marked removed before it is let go of: a reference held elsewhere
+	 * for a moment longer, the preview's for one, must not get it saved
+	 * into the collection under its retiring name. */
+	obs_canvas_remove(old);
 	obs_frontend_remove_canvas(old);
 	obs_canvas_release(old);
 	obs_frontend_save();
-	obs_log(LOG_INFO, "vertical canvas replaced without audio mixing; %d scene(s) moved", (int)scenes.size());
-	return fresh;
+	obs_log(LOG_INFO, "vertical canvas replaced, %d scene(s) moved: %s", (int)scenes.size(), reason);
 }
 
-/* Work that had to wait for the mixes to go idle, or for a source to report
+/* Work that had to wait for the canvas to go idle, or for a source to report
  * its size, gets another go at the moments that change either. A canvas
  * replacement is a fresh adoption, so everything hooked to the old one is
  * let go of first. */
@@ -276,7 +336,7 @@ void VerticalCanvas::retryDeferredWork()
 {
 	if (!canvas)
 		return;
-	if (rebuildPending && !obs_video_active())
+	if (replacePending && !canvasInUse())
 		adopt();
 	else if (layoutsDeferred)
 		reconcileScenes();
@@ -290,8 +350,9 @@ void VerticalCanvas::teardown()
 	releaseTransition();
 	disconnectAllSceneSignals();
 	if (canvas) {
-		obs_canvas_release(canvas);
-		canvas = nullptr;
+		obs_canvas_t *going = canvas;
+		setCanvasHandle(nullptr);
+		obs_canvas_release(going);
 	}
 }
 
@@ -345,7 +406,16 @@ void VerticalCanvas::handleFrontendEvent(enum obs_frontend_event event)
 		break;
 	case OBS_FRONTEND_EVENT_RECORDING_STOPPED:
 	case OBS_FRONTEND_EVENT_VIRTUALCAM_STOPPED:
+	case OBS_FRONTEND_EVENT_REPLAY_BUFFER_STOPPED:
 		retryDeferredWork();
+		break;
+	case OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED:
+	case OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED:
+		/* OBS sets its program transition rather than starting it on
+		 * both switches, so nothing is mirrored; the canvas is settled
+		 * on the program scene by hand. */
+		hookCurrentTransition();
+		showCurrentScene();
 		break;
 	case OBS_FRONTEND_EVENT_PROFILE_CHANGED:
 		/* The vertical stream's audio track is chosen from the profile's

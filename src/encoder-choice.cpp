@@ -24,16 +24,34 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <obs.h>
 
-const char *dsrPickH264EncoderId()
-{
-	static const char *preferred[] = {"obs_nvenc_h264_tex", "ffmpeg_nvenc", "obs_qsv11_v2", "h264_texture_amf"};
+namespace {
 
-	for (const char *candidate : preferred) {
+/* The first of the preferred encoder types this OBS has registered. */
+const char *firstRegistered(const char *const *preferred, size_t count)
+{
+	for (size_t p = 0; p < count; p++) {
 		const char *id = nullptr;
 		for (size_t i = 0; obs_enum_encoder_types(i, &id); i++) {
-			if (id && strcmp(id, candidate) == 0)
-				return candidate;
+			if (id && strcmp(id, preferred[p]) == 0)
+				return preferred[p];
 		}
 	}
-	return "obs_x264";
+	return nullptr;
+}
+
+} // namespace
+
+const char *dsrPickH264EncoderId()
+{
+	static const char *const preferred[] = {"obs_nvenc_h264_tex", "ffmpeg_nvenc", "obs_qsv11_v2",
+						"h264_texture_amf"};
+	const char *id = firstRegistered(preferred, sizeof(preferred) / sizeof(preferred[0]));
+	return id ? id : "obs_x264";
+}
+
+const char *dsrPickHevcEncoderId()
+{
+	static const char *const preferred[] = {"obs_nvenc_hevc_tex", "obs_nvenc_hevc_cuda", "ffmpeg_hevc_nvenc",
+						"obs_qsv11_hevc", "h265_texture_amf"};
+	return firstRegistered(preferred, sizeof(preferred) / sizeof(preferred[0]));
 }

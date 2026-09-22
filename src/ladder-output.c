@@ -93,6 +93,22 @@ static void end_session(struct dsr_ladder_output *o)
 	o->spec_valid = false;
 }
 
+void dsr_ladder_output_forget_session(obs_output_t *output)
+{
+	if (!output || strcmp(obs_output_get_id(output), DSR_LADDER_OUTPUT_ID) != 0)
+		return;
+	struct dsr_ladder_output *o = obs_obj_get_data(output);
+	if (!o)
+		return;
+
+	pthread_mutex_lock(&o->start_mutex);
+	const bool starting = o->connecting;
+	pthread_mutex_unlock(&o->start_mutex);
+	if (starting || o->active || obs_output_active(output))
+		return;
+	end_session(o);
+}
+
 /* Tell a start still under way to give up and wait for it. Its HTTP call
  * polls the flag, and a connect blocked on the link returns once the link
  * is broken. A start that already finished let go of its own thread. */
@@ -158,10 +174,13 @@ static void fail_start(struct dsr_ladder_output *o, int code, const char *error)
 }
 
 /* The renditions this session carries. A session that OBS started for dual
- * format prepares its ladder once and keeps it across reconnects; a session
- * started for a plain stream sends OBS's own encoder and nothing else. The
- * previous session's encoders are let go of here, on a start, because that
- * is the one moment the output is certainly inactive and takes the change. */
+ * format prepares its ladder once and keeps it across reconnects, an empty
+ * one included: a ladder that could not be had is decided once per session
+ * and a reconnect sends the same contribution the session began with. A
+ * session started for a plain stream sends OBS's own encoder and nothing
+ * else. The previous session's encoders are let go of here, on a start,
+ * because that is the one moment the output is certainly inactive and takes
+ * the change. */
 static bool ensure_ladder(struct dsr_ladder_output *o, char *error, size_t error_len)
 {
 	const uint64_t session = dsr_ladder_current_session();
@@ -172,16 +191,26 @@ static bool ensure_ladder(struct dsr_ladder_output *o, char *error, size_t error
 		end_session(o);
 		if (!dsr_ladder_wanted())
 			return true;
-		if (!dsr_ladder_prepare(&o->spec, &o->abort_start, error, error_len))
+		const enum dsr_ladder_outcome outcome = dsr_ladder_prepare(&o->spec, &o->abort_start);
+		if (outcome == DSR_LADDER_ABORTED) {
+			strncpy(error, "stopped before the ladder was prepared", error_len - 1);
 			return false;
+		}
 		o->spec_valid = true;
 		o->session = session;
 	}
 
-	if (!o->encoders) {
+	if (!o->encoders && o->spec.count > 0) {
 		o->encoders = dsr_ladder_attach(o->output, &o->spec, error, error_len);
-		if (!o->encoders)
-			return false;
+		if (!o->encoders) {
+			/* The encoders are the one thing the ladder cannot do
+			 * without. The session goes on as a plain stream rather
+			 * than not at all, and says so. */
+			obs_log(LOG_WARNING, "dual format encoders unavailable, streaming plain: %s", error);
+			dsr_ladder_report_fallback(error);
+			dsr_ladder_discard(&o->abort_start);
+			o->spec.count = 0;
+		}
 	}
 	return true;
 }
@@ -198,7 +227,9 @@ static bool build_mux(struct dsr_ladder_output *o, char *error, size_t error_len
 		uint8_t *header = NULL;
 		size_t header_size = 0;
 		obs_encoder_get_extra_data(encoder, &header, &header_size);
-		if (!dsr_ts_mux_add_video(o->mux, header, header_size)) {
+		const char *codec = obs_encoder_get_codec(encoder);
+		const bool hevc = codec && strcmp(codec, "hevc") == 0;
+		if (!dsr_ts_mux_add_video(o->mux, header, header_size, hevc)) {
 			strncpy(error, "too many video renditions", error_len - 1);
 			return false;
 		}
@@ -397,7 +428,7 @@ static struct obs_output_info ladder_output_info = {
 	.get_dropped_frames = ladder_dropped_frames,
 	.get_congestion = ladder_congestion,
 	.get_connect_time_ms = ladder_connect_time,
-	.encoded_video_codecs = "h264",
+	.encoded_video_codecs = "h264;hevc",
 	.encoded_audio_codecs = "aac",
 	.protocols = "SRT",
 };

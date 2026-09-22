@@ -21,6 +21,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "vertical-preview.hpp"
 
 #include <QContextMenuEvent>
+#include <QEvent>
 #include <QMouseEvent>
 #include <QResizeEvent>
 #include <QWheelEvent>
@@ -70,11 +71,7 @@ VerticalPreview::VerticalPreview(VerticalCanvas *manager, QWidget *parent) : QWi
 
 VerticalPreview::~VerticalPreview()
 {
-	if (display) {
-		obs_display_remove_draw_callback(display, drawCallback, this);
-		obs_display_destroy(display);
-		display = nullptr;
-	}
+	destroyDisplay();
 
 	QMutexLocker lock(&mutex);
 	if (quad || overflowTexture || overflowEffect || stripedEffect) {
@@ -150,6 +147,43 @@ void VerticalPreview::showEvent(QShowEvent *event)
 {
 	QWidget::showEvent(event);
 	ensureDisplay();
+}
+
+/* Qt gives a native widget a new window when its dock is floated, docked or
+ * otherwise reparented, and takes the old one away. A display is bound to
+ * the window it was made for, so it goes with that window; the first paint
+ * of the new one makes a display for it. A move to a screen at another
+ * scale rebuilds the display the same way, since its swap chain is sized in
+ * that screen's pixels. */
+bool VerticalPreview::event(QEvent *event)
+{
+	switch (event->type()) {
+	case QEvent::WinIdChange:
+	case QEvent::ScreenChangeInternal:
+		destroyDisplay();
+		break;
+	default:
+		break;
+	}
+	return QWidget::event(event);
+}
+
+/* libobs paints this surface, so there is nothing to draw here; a paint
+ * request is the one sure sign the native window is up and exposed, which
+ * is when a display can be made for it. */
+void VerticalPreview::paintEvent(QPaintEvent *event)
+{
+	ensureDisplay();
+	QWidget::paintEvent(event);
+}
+
+void VerticalPreview::destroyDisplay()
+{
+	if (!display)
+		return;
+	obs_display_remove_draw_callback(display, drawCallback, this);
+	obs_display_destroy(display);
+	display = nullptr;
 }
 
 void VerticalPreview::resizeEvent(QResizeEvent *event)

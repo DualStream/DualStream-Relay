@@ -20,12 +20,16 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #pragma once
 
-/* The H.264 encoder this machine should use for a program the plugin encodes
- * itself. Hardware first, matching what simple output mode would pick on the
- * same machine, with obs_x264 as the floor. */
-const char *dsrPickH264EncoderId();
+#include <QByteArray>
+#include <QString>
 
-/* The HEVC encoder for a rendition Twitch dictates in HEVC. Hardware only,
- * since OBS ships no software HEVC encoder; null when this machine has none,
- * in which case such a rendition cannot be encoded here. */
-const char *dsrPickHevcEncoderId();
+/* Shared between the ladder's state and its prepare flow, both of which run
+ * off the UI thread. */
+
+/* The website and the bearer the dock last pushed. */
+void dsrLadderAuth(QByteArray &apiBase, QByteArray &bearer);
+
+/* The dock's note for this session, and whether a prepared configuration
+ * is on the website waiting to be taken down once the session ends. */
+void dsrLadderSetNote(const QString &note);
+void dsrLadderSetPreparedPending(bool pending);

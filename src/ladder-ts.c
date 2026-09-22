@@ -27,8 +27,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #define PES_STREAM_VIDEO 0xE0
 #define PES_STREAM_AUDIO 0xC0
-#define NAL_SPS 7
-#define NAL_AUD 9
+
+/* The NAL unit types that matter here, in each codec's numbering. */
+#define H264_NAL_SPS 7
+#define H264_NAL_AUD 9
+#define HEVC_NAL_SPS 33
+#define HEVC_NAL_AUD 35
 
 /* Receivers expect the program tables at least ten times a second. */
 #define PSI_INTERVAL_90K 9000
@@ -38,7 +42,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 /* Room for the longest PES header this writer emits. */
 #define PES_HEADER_MAX 19
 
-static const uint8_t kAccessUnitDelimiter[] = {0x00, 0x00, 0x00, 0x01, 0x09, 0xF0};
+static const uint8_t kH264Delimiter[] = {0x00, 0x00, 0x00, 0x01, 0x09, 0xF0};
+static const uint8_t kHevcDelimiter[] = {0x00, 0x00, 0x00, 0x01, 0x46, 0x01, 0x50};
 
 bool dsr_ts_emit_packet(struct dsr_ts_mux *mux, const uint8_t *packet)
 {
@@ -180,17 +185,21 @@ static size_t find_start_code(const uint8_t *data, size_t size, size_t from)
 	return size;
 }
 
-static int nal_type_at(const uint8_t *data, size_t size, size_t start_code)
+/* H.264 keeps the type in the low five bits of a one byte header; HEVC in
+ * the six bits after the forbidden bit of a two byte one. */
+static int nal_type_at(const uint8_t *data, size_t size, size_t start_code, bool hevc)
 {
 	const size_t header = start_code + 3;
-	return header < size ? (data[header] & 0x1F) : -1;
+	if (header >= size)
+		return -1;
+	return hevc ? ((data[header] >> 1) & 0x3F) : (data[header] & 0x1F);
 }
 
-static bool contains_nal(const uint8_t *data, size_t size, int type)
+static bool contains_nal(const uint8_t *data, size_t size, int type, bool hevc)
 {
 	size_t at = find_start_code(data, size, 0);
 	while (at < size) {
-		if (nal_type_at(data, size, at) == type)
+		if (nal_type_at(data, size, at, hevc) == type)
 			return true;
 		at = find_start_code(data, size, at + 3);
 	}
@@ -234,7 +243,7 @@ void dsr_ts_mux_destroy(struct dsr_ts_mux *mux)
 	bfree(mux);
 }
 
-bool dsr_ts_mux_add_video(struct dsr_ts_mux *mux, const uint8_t *parameter_sets, size_t size)
+bool dsr_ts_mux_add_video(struct dsr_ts_mux *mux, const uint8_t *parameter_sets, size_t size, bool hevc)
 {
 	if (mux->video_count >= DSR_TS_MAX_VIDEO)
 		return false;
@@ -242,6 +251,7 @@ bool dsr_ts_mux_add_video(struct dsr_ts_mux *mux, const uint8_t *parameter_sets,
 	const size_t index = mux->video_count;
 	mux->video[index].pid = DSR_TS_PID_VIDEO_BASE + (uint16_t)index;
 	mux->video[index].continuity = 0;
+	mux->video_hevc[index] = hevc;
 	/* Only a header in byte-stream form can be spliced in front of a
 	 * keyframe; anything else is left to the repeated in-band headers,
 	 * and said so, because a keyframe with neither is dropped by the
@@ -305,9 +315,14 @@ bool dsr_ts_mux_write_video(struct dsr_ts_mux *mux, size_t index, const uint8_t 
 	/* Every access unit opens with a delimiter, and a keyframe carries its
 	 * parameter sets: the ones the encoder wrote, or the encoder's header
 	 * spliced in behind the delimiter when it wrote none. */
+	const bool hevc = mux->video_hevc[index];
+	const int aud_type = hevc ? HEVC_NAL_AUD : H264_NAL_AUD;
+	const int sps_type = hevc ? HEVC_NAL_SPS : H264_NAL_SPS;
+	const uint8_t *delimiter = hevc ? kHevcDelimiter : kH264Delimiter;
+	const size_t delimiter_size = hevc ? sizeof(kHevcDelimiter) : sizeof(kH264Delimiter);
 	const size_t first_code = find_start_code(data, size, 0);
-	const bool has_delimiter = first_code < size && nal_type_at(data, size, first_code) == NAL_AUD;
-	const bool needs_header = keyframe && !contains_nal(data, size, NAL_SPS);
+	const bool has_delimiter = first_code < size && nal_type_at(data, size, first_code, hevc) == aud_type;
+	const bool needs_header = keyframe && !contains_nal(data, size, sps_type, hevc);
 	const uint8_t *header = needs_header ? mux->video_headers[index] : NULL;
 	const size_t header_size = header ? mux->video_header_sizes[index] : 0;
 	if (needs_header && !header && !mux->video_header_missing_noted[index]) {
@@ -316,7 +331,7 @@ bool dsr_ts_mux_write_video(struct dsr_ts_mux *mux, size_t index, const uint8_t 
 			index);
 	}
 
-	const size_t payload = size + (has_delimiter ? 0 : sizeof(kAccessUnitDelimiter)) + header_size;
+	const size_t payload = size + (has_delimiter ? 0 : delimiter_size) + header_size;
 	if (!ensure_scratch(mux, PES_HEADER_MAX + payload))
 		return false;
 
@@ -330,8 +345,8 @@ bool dsr_ts_mux_write_video(struct dsr_ts_mux *mux, size_t index, const uint8_t 
 		at += delimiter_len;
 		consumed = delimiter_len;
 	} else {
-		memcpy(pes + at, kAccessUnitDelimiter, sizeof(kAccessUnitDelimiter));
-		at += sizeof(kAccessUnitDelimiter);
+		memcpy(pes + at, delimiter, delimiter_size);
+		at += delimiter_size;
 	}
 	if (header) {
 		memcpy(pes + at, header, header_size);

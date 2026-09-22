@@ -51,6 +51,8 @@ public:
 
 protected:
 	QPaintEngine *paintEngine() const override;
+	bool event(QEvent *event) override;
+	void paintEvent(QPaintEvent *event) override;
 	void contextMenuEvent(QContextMenuEvent *event) override;
 	void showEvent(QShowEvent *event) override;
 	void resizeEvent(QResizeEvent *event) override;
@@ -62,6 +64,7 @@ protected:
 
 private:
 	void ensureDisplay();
+	void destroyDisplay();
 	bool mapToCanvas(const QPointF &widgetPos, QPointF *canvasPos) const;
 	void setSelectedItem(obs_sceneitem_t *item);
 	void applySelection(qint64 itemId);

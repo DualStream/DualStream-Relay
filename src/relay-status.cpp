@@ -32,6 +32,46 @@ const int kOfflineAfterFailures = 2;
 const qint64 kEndConfirmTimeoutMs = 20000;
 } // namespace
 
+int dsrDestStateRank(const QString &state)
+{
+	if (state == QLatin1String("live"))
+		return 3;
+	if (state == QLatin1String("connecting") || state == QLatin1String("reconnecting"))
+		return 2;
+	return 1;
+}
+
+/* The relay keeps one status row per attempt to carry a destination, so a
+ * session accumulates several for the same one on the same canvas: the
+ * first try it refused, the leg that then ran, the one that took over after
+ * a handover. The frame lists them all in no particular order, and only
+ * the one that says what the destination is doing now is worth keeping: an
+ * open row over a closed one, and between rows of a kind the later one,
+ * which is the later attempt. */
+void RelayStatus::takeDestState(const DsrDestStatus &state)
+{
+	for (DsrDestStatus &kept : destStates) {
+		if (kept.destinationId != state.destinationId || kept.canvas != state.canvas)
+			continue;
+		if (dsrDestStateRank(state.state) >= dsrDestStateRank(kept.state))
+			kept = state;
+		return;
+	}
+	destStates.append(state);
+}
+
+const DsrDestStatus *RelayStatus::destination(const QString &id) const
+{
+	const DsrDestStatus *best = nullptr;
+	for (const DsrDestStatus &state : destStates) {
+		if (state.destinationId != id)
+			continue;
+		if (!best || dsrDestStateRank(state.state) > dsrDestStateRank(best->state))
+			best = &state;
+	}
+	return best;
+}
+
 RelayStatus::RelayStatus(RelayAuth *auth, QObject *parent) : QObject(parent), auth(auth)
 {
 	timer.setInterval(kPollIntervalMs);
@@ -146,7 +186,7 @@ void RelayStatus::handleFrame(const DsrApiResult &result)
 		state.canvas = row.value(QStringLiteral("canvas")).toString();
 		state.state = row.value(QStringLiteral("state")).toString();
 		state.lastError = row.value(QStringLiteral("last_error")).toString();
-		destStates.append(state);
+		takeDestState(state);
 	}
 
 	if (endingFlag && sessionStatusValue == QLatin1String("ended")) {

@@ -25,6 +25,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <QMetaObject>
 
+#include <algorithm>
 #include <cstring>
 
 #include <obs-module.h>
@@ -61,7 +62,15 @@ void VerticalCanvas::onOutputStarted(void *data, calldata_t *)
 void VerticalCanvas::onOutputStopped(void *data, calldata_t *)
 {
 	VerticalCanvas *self = static_cast<VerticalCanvas *>(data);
-	QMetaObject::invokeMethod(self, [self]() { self->releaseOutput(); }, Qt::QueuedConnection);
+	QMetaObject::invokeMethod(
+		self,
+		[self]() {
+			self->releaseOutput();
+			/* The canvas's mix is idle again, which is what a deferred
+			 * replacement was waiting for. */
+			self->retryDeferredWork();
+		},
+		Qt::QueuedConnection);
 }
 
 /* Start the relay publish once everything it needs is true: the canvas exists,
@@ -138,12 +147,17 @@ bool VerticalCanvas::startOutput(const QString &server, const QString &key, bool
 	service = obs_service_create_private("rtmp_custom", "dsr_vertical_service", serviceSettings);
 	obs_data_release(serviceSettings);
 
-	/* Portrait is the same pixel count rotated, and the desktop app
-	 * publishes its vertical feed at the horizontal bitrate by default.
+	/* Portrait is the same pixel count rotated, so it goes out at the
+	 * bitrate the desktop stream is tuned to, as the desktop app does;
+	 * the relay's figure for the canvas is the ceiling. The uplink then
+	 * carries twice the desktop rate with both canvases on, not the
+	 * desktop rate plus a fixed 6000, which no ordinary upload takes.
 	 * The service adds the SRT essentials, repeated headers and ADTS. */
 	const struct dsr_canvas_limits &limits = dsr_limits_get()->portrait;
+	const int desktopKbps = dsr_get_configured_bitrate_kbps();
+	const int videoKbps = desktopKbps > 0 ? std::min(desktopKbps, limits.video_kbps) : limits.video_kbps;
 	obs_data_t *videoSettings = obs_data_create();
-	obs_data_set_int(videoSettings, "bitrate", limits.video_kbps);
+	obs_data_set_int(videoSettings, "bitrate", videoKbps);
 	obs_data_set_int(videoSettings, "keyint_sec", limits.keyint_sec);
 
 	obs_data_t *audioSettings = obs_data_create();
@@ -199,7 +213,7 @@ bool VerticalCanvas::startOutput(const QString &server, const QString &key, bool
 		return false;
 	}
 
-	obs_log(LOG_INFO, "portrait output starting (%s, %d kbps)", encoderId, limits.video_kbps);
+	obs_log(LOG_INFO, "portrait output starting (%s, %d kbps)", encoderId, videoKbps);
 	return true;
 }
 

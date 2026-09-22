@@ -66,7 +66,7 @@ video_t *canvasVideo(int canvasIndex, obs_video_info &info)
 
 /* The encoder type OBS's own stream encoder uses, when it is an H.264 one,
  * so every rendition runs on the same hardware the user already picked. */
-const char *encoderIdFor(obs_output_t *output)
+const char *h264EncoderIdFor(obs_output_t *output)
 {
 	obs_encoder_t *primary = obs_output_get_video_encoder2(output, 0);
 	const char *id = primary ? obs_encoder_get_id(primary) : nullptr;
@@ -99,12 +99,20 @@ void release(dsr_ladder_encoders *set)
 struct dsr_ladder_encoders *dsr_ladder_attach(obs_output_t *output, const struct dsr_ladder_spec *spec, char *error,
 					      size_t error_len)
 {
-	const char *encoderId = encoderIdFor(output);
+	const char *h264Id = h264EncoderIdFor(output);
+	const char *hevcId = dsrPickHevcEncoderId();
 	dsr_ladder_encoders *set = new dsr_ladder_encoders;
 	set->group = obs_encoder_group_create();
 
 	for (size_t i = 0; i < spec->count; i++) {
 		const dsr_ladder_rendition &rendition = spec->renditions[i];
+		const char *encoderId = rendition.hevc ? hevcId : h264Id;
+		if (!encoderId) {
+			setError(error, error_len,
+				 QString::fromUtf8(obs_module_text("Ladder.EncoderFailed")).arg("HEVC"));
+			release(set);
+			return nullptr;
+		}
 
 		obs_video_info info;
 		video_t *video = canvasVideo(rendition.canvas_index, info);
@@ -122,7 +130,7 @@ struct dsr_ladder_encoders *dsr_ladder_attach(obs_output_t *output, const struct
 		obs_data_set_int(settings, "bitrate", rendition.bitrate_kbps);
 		obs_data_set_int(settings, "keyint_sec", rendition.keyint_sec);
 		obs_data_set_string(settings, "rate_control", "CBR");
-		obs_data_set_string(settings, "profile", "high");
+		obs_data_set_string(settings, "profile", rendition.hevc ? "main" : "high");
 		obs_data_set_bool(settings, "repeat_headers", true);
 
 		char name[32];
@@ -165,7 +173,8 @@ struct dsr_ladder_encoders *dsr_ladder_attach(obs_output_t *output, const struct
 	for (size_t i = 0; i < set->count; i++)
 		obs_output_set_video_encoder2(output, set->encoders[i], i);
 
-	obs_log(LOG_INFO, "dual format ladder attached: %zu renditions on %s", set->count, encoderId);
+	obs_log(LOG_INFO, "dual format ladder attached: %zu renditions on %s%s%s", set->count, h264Id,
+		hevcId ? " and " : "", hevcId ? hevcId : "");
 	return set;
 }
 

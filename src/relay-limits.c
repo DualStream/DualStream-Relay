@@ -21,10 +21,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "relay-limits.h"
 
 /* The relay resolves a bitrate tier per account when a stream starts, and a
- * partner's tier sits above these figures. The plugin cannot see partner
- * status, so it offers the settings every account clears and keeps the
- * refusal threshold at the lowest tier the relay resolves. */
-static const struct dsr_relay_limits limits = {
+ * partner's tier sits above these figures. Until the relay has said which
+ * tier this account resolves to, the plugin offers the settings every
+ * account clears and keeps the refusal threshold at the lowest tier. */
+static const struct dsr_relay_limits defaults = {
 	.landscape =
 		{
 			.max_width = 1920,
@@ -51,7 +51,26 @@ static const struct dsr_relay_limits limits = {
 		},
 };
 
+static struct dsr_relay_limits resolved_limits;
+static bool resolved = false;
+
 const struct dsr_relay_limits *dsr_limits_get(void)
 {
-	return &limits;
+	return resolved ? &resolved_limits : &defaults;
+}
+
+const struct dsr_relay_limits *dsr_limits_defaults(void)
+{
+	return &defaults;
+}
+
+void dsr_limits_apply(const struct dsr_relay_limits *from_relay)
+{
+	resolved_limits = *from_relay;
+	resolved = true;
+}
+
+bool dsr_limits_from_relay(void)
+{
+	return resolved;
 }

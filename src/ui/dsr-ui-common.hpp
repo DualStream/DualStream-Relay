@@ -34,6 +34,15 @@ QString dsrText(const char *key);
 /* Display name of a destination's canvas: "landscape", "portrait" or "both". */
 QString dsrCanvasDisplay(const QString &canvas);
 
+/* Plain words for a code the relay puts on a destination's status row to
+ * say why the picture is not what was sent. Empty for anything else, which
+ * is shown as the relay wrote it. */
+QString dsrDestErrorText(const QString &code);
+
+/* Whether a code describes a stream that is running, as opposed to why a
+ * destination was refused. */
+bool dsrDestErrorAboutRunning(const QString &code);
+
 /* Horizontal rule between sections of a dialog. */
 QFrame *dsrMakeSeparator();
 

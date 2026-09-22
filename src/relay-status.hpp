@@ -35,6 +35,10 @@ struct DsrDestStatus {
 	QString lastError;
 };
 
+/* How much a status row says about what its destination is doing now: a
+ * running leg over one on its way up, either over one that is finished. */
+int dsrDestStateRank(const QString &state);
+
 /* Session telemetry over plain HTTPS: GET /api/relay/sessions/current every
  * few seconds while OBS is streaming, nothing while idle. Also owns the
  * end-stream call, which is what turns a Stop Streaming press into an
@@ -65,6 +69,8 @@ public:
 	QDateTime protectedSince() const { return protectedSinceValue; }
 	bool ending() const { return endingFlag; }
 	const QVector<DsrDestStatus> &destinations() const { return destStates; }
+	/* The row that speaks for a destination: its best-ranked one. */
+	const DsrDestStatus *destination(const QString &id) const;
 
 signals:
 	void updated();
@@ -75,6 +81,7 @@ signals:
 
 private:
 	void handleFrame(const DsrApiResult &result);
+	void takeDestState(const DsrDestStatus &state);
 	void updateTimer();
 	void abandonEnd();
 

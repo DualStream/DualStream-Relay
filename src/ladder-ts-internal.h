@@ -40,6 +40,7 @@ struct dsr_ts_mux {
 	void *ctx;
 
 	struct dsr_ts_stream video[DSR_TS_MAX_VIDEO];
+	bool video_hevc[DSR_TS_MAX_VIDEO];
 	uint8_t *video_headers[DSR_TS_MAX_VIDEO];
 	size_t video_header_sizes[DSR_TS_MAX_VIDEO];
 	bool video_header_missing_noted[DSR_TS_MAX_VIDEO];

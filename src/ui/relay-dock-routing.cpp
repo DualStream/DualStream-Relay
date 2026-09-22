@@ -35,6 +35,49 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "../vertical-canvas.hpp"
 #include "dsr-ui-common.hpp"
 
+namespace {
+
+/* One canvas's figures from the ingest target. A field the relay leaves
+ * out, or sends as nothing, keeps the plugin's own. */
+void readCanvasLimits(const QJsonObject &json, struct dsr_canvas_limits &out)
+{
+	const auto count = [&json](const char *key, int &field) {
+		const int value = json.value(QLatin1String(key)).toInt();
+		if (value > 0)
+			field = value;
+	};
+	const auto size = [&json](const char *key, uint32_t &field) {
+		const int value = json.value(QLatin1String(key)).toInt();
+		if (value > 0)
+			field = (uint32_t)value;
+	};
+	size("max_width", out.max_width);
+	size("max_height", out.max_height);
+	const double fps = json.value(QLatin1String("max_fps")).toDouble();
+	if (fps > 0.0)
+		out.max_fps = fps;
+	count("video_kbps", out.video_kbps);
+	count("cap_kbps", out.cap_kbps);
+	count("unfit_kbps", out.unfit_kbps);
+	count("keyint_sec", out.keyint_sec);
+}
+
+/* The relay resolves its bitrate tier per account, and a partner's sits
+ * above the figures the plugin ships with. What the target carries is
+ * applied over the plugin's own, so every note and the tune dialog speak
+ * in this account's numbers. */
+void applyRelayLimits(const QJsonObject &json)
+{
+	if (json.isEmpty())
+		return;
+	struct dsr_relay_limits limits = *dsr_limits_defaults();
+	readCanvasLimits(json.value(QStringLiteral("landscape")).toObject(), limits.landscape);
+	readCanvasLimits(json.value(QStringLiteral("portrait")).toObject(), limits.portrait);
+	dsr_limits_apply(&limits);
+}
+
+} // namespace
+
 void RelayDock::fetchIngestTarget(std::function<void(bool)> done)
 {
 	if (done)
@@ -113,6 +156,8 @@ void RelayDock::fetchIngestTarget(std::function<void(bool)> done)
 			targetServer = rtmpsServer;
 			targetKey = rtmpsKey;
 		}
+
+		applyRelayLimits(target.value(QStringLiteral("limits")).toObject());
 
 		targetFetched = !targetServer.isEmpty() && !targetKey.isEmpty();
 		if (targetFetched)

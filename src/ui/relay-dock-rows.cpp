@@ -177,17 +177,8 @@ void RelayDock::rebuildRows()
 		delete item;
 	}
 
-	const QVector<DsrDestStatus> &liveStates = status->destinations();
-	for (const DsrDestination &dest : destinations->list()) {
-		const DsrDestStatus *live = nullptr;
-		for (const DsrDestStatus &state : liveStates) {
-			if (state.destinationId == dest.id) {
-				live = &state;
-				break;
-			}
-		}
-		listLayout->insertWidget(listLayout->count() - 1, makeRow(dest, live));
-	}
+	for (const DsrDestination &dest : destinations->list())
+		listLayout->insertWidget(listLayout->count() - 1, makeRow(dest, status->destination(dest.id)));
 }
 
 QWidget *RelayDock::makeRow(const DsrDestination &dest, const DsrDestStatus *live)
@@ -284,14 +275,28 @@ QWidget *RelayDock::makeRow(const DsrDestination &dest, const DsrDestStatus *liv
 	lineLayout->addWidget(menuButton);
 	outer->addWidget(line);
 
-	/* The relay's own error string is the most useful thing on screen
-	 * when a destination is refused; show it whole and selectable. */
-	if (live && live->state == QLatin1String("rejected") && !live->lastError.isEmpty()) {
-		QLabel *error = new QLabel(live->lastError);
-		error->setObjectName(QStringLiteral("destError"));
-		error->setWordWrap(true);
-		error->setTextInteractionFlags(Qt::TextSelectableByMouse);
-		outer->addWidget(error);
+	/* What the relay has to say under the row: why it refused this
+	 * destination, as the relay wrote it, or, on one that is running, why
+	 * the picture differs from what OBS sends, in plain words and not in
+	 * red, since the stream is up. The relay stamps the running-stream
+	 * codes across every row of a canvas, refused ones included, where
+	 * they say nothing true, so a refusal never shows one. */
+	if (live && !live->lastError.isEmpty()) {
+		const bool refused = live->state == QLatin1String("rejected");
+		const bool running = dsrDestErrorAboutRunning(live->lastError);
+		const QString words = dsrDestErrorText(live->lastError);
+		QString text;
+		if (refused && !running)
+			text = words.isEmpty() ? live->lastError : words;
+		else if (!refused)
+			text = words;
+		if (!text.isEmpty()) {
+			QLabel *note = new QLabel(text);
+			note->setObjectName(refused ? QStringLiteral("destError") : QStringLiteral("destNote"));
+			note->setWordWrap(true);
+			note->setTextInteractionFlags(Qt::TextSelectableByMouse);
+			outer->addWidget(note);
+		}
 	}
 
 	return row;

@@ -54,6 +54,7 @@ QString dsrRelayStyleSheet()
 #destState[state="ended"]        { color: palette(text); }
 #destState[state="applying"]     { color: #E8981C; }
 #destError { color: #F87171; font-size: 11px; }
+#destNote  { color: #E8981C; font-size: 11px; }
 
 /* The platform mark is painted, not styled: the artwork is a white
  * silhouette recolored per brand, which a style sheet cannot express. */
