@@ -59,6 +59,7 @@ private:
 
 	void buildEditUi();
 	void submitEdit();
+	bool confirmCanvasChangeWhileLive(const QString &canvas);
 	void showError(const QString &errorKey);
 
 	static QStringList allowedCanvases(const QString &platform);

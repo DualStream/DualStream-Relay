@@ -62,6 +62,38 @@ struct SeedEntry {
 	double area;
 };
 
+bool hasVideo(obs_source_t *source)
+{
+	return source && (obs_source_get_output_flags(source) & OBS_SOURCE_VIDEO) != 0;
+}
+
+bool collectVideoPresence(obs_scene_t *, obs_sceneitem_t *item, void *param)
+{
+	if (!hasVideo(obs_sceneitem_get_source(item)))
+		return true;
+	*static_cast<bool *>(param) = true;
+	return false;
+}
+
+/* Footprint in the landscape frame decides which source is the main
+ * content. Bounds are authoritative when set; otherwise the raw size times
+ * the item scale. */
+SeedEntry seedEntryFor(obs_sceneitem_t *item)
+{
+	obs_source_t *source = obs_sceneitem_get_source(item);
+	double area = 0;
+	if (obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
+		struct vec2 bounds;
+		obs_sceneitem_get_bounds(item, &bounds);
+		area = (double)bounds.x * (double)bounds.y;
+	} else {
+		struct vec2 scale;
+		obs_sceneitem_get_scale(item, &scale);
+		area = (double)obs_source_get_width(source) * scale.x * (double)obs_source_get_height(source) * scale.y;
+	}
+	return {source, obs_sceneitem_visible(item), qAbs(area)};
+}
+
 bool collectSeedEntries(obs_scene_t *, obs_sceneitem_t *item, void *param)
 {
 	QVector<SeedEntry> *entries = static_cast<QVector<SeedEntry> *>(param);
@@ -76,22 +108,20 @@ bool collectSeedEntries(obs_scene_t *, obs_sceneitem_t *item, void *param)
 			return true;
 	}
 
-	/* Footprint in the landscape frame decides which source is the main
-	 * content. Bounds are authoritative when set; otherwise the raw size
-	 * times the item scale. */
-	double area = 0;
-	if (obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
-		struct vec2 bounds;
-		obs_sceneitem_get_bounds(item, &bounds);
-		area = (double)bounds.x * (double)bounds.y;
-	} else {
-		struct vec2 scale;
-		obs_sceneitem_get_scale(item, &scale);
-		area = (double)obs_source_get_width(source) * scale.x * (double)obs_source_get_height(source) * scale.y;
-	}
-
-	entries->append({source, obs_sceneitem_visible(item), area});
+	entries->append(seedEntryFor(item));
 	return true;
+}
+
+/* The largest visible source, shown filling the frame when a layout is
+ * first made; NULL when none has a size yet. */
+const SeedEntry *pickHero(const QVector<SeedEntry> &entries)
+{
+	const SeedEntry *hero = nullptr;
+	for (const SeedEntry &entry : entries) {
+		if (entry.visible && entry.area > 0 && (!hero || entry.area > hero->area))
+			hero = &entry;
+	}
+	return hero;
 }
 
 struct MembershipEntry {
@@ -193,12 +223,7 @@ void VerticalCanvas::seedCounterpart(obs_source_t *landscapeScene)
 
 	QVector<SeedEntry> entries;
 	obs_scene_enum_items(landscape, collectSeedEntries, &entries);
-
-	const SeedEntry *hero = nullptr;
-	for (const SeedEntry &entry : entries) {
-		if (entry.visible && entry.area > 0 && (!hero || entry.area > hero->area))
-			hero = &entry;
-	}
+	const SeedEntry *hero = pickHero(entries);
 
 	for (const SeedEntry &entry : entries) {
 		obs_sceneitem_t *item = obs_scene_add(portrait, entry.source);
@@ -246,7 +271,10 @@ void VerticalCanvas::disconnectAllSceneSignals()
 /* Membership sync, run queued on the UI thread. The portrait scene carries the
  * set of distinct sources its landscape scene has: additions arrive hidden so
  * nothing reaches the vertical stream unreviewed, and items whose source left
- * the landscape scene go away. Layout of surviving items is never touched. */
+ * the landscape scene go away. Layout of surviving items is never touched.
+ * A portrait scene with no items has no layout to protect, as when it was
+ * seeded from a new, empty scene: its first additions are laid out the way a
+ * seed is, so the mobile frame shows what the desktop one does. */
 void VerticalCanvas::syncMembership(const QString &sceneUuid)
 {
 	if (!canvas)
@@ -281,15 +309,34 @@ void VerticalCanvas::syncMembership(const QString &sceneUuid)
 			portraitSet.insert(entry.uuid);
 	}
 
+	/* Audio sources draw nothing, so a scene holding only those still has
+	 * no layout to protect. */
+	bool hasLayout = false;
+	obs_scene_enum_items(portrait, collectVideoPresence, &hasLayout);
+	const bool firstLayout = !hasLayout;
+	QVector<SeedEntry> additions;
 	for (const MembershipEntry &entry : landscapeItems) {
 		if (portraitSet.contains(entry.uuid))
 			continue;
 		portraitSet.insert(entry.uuid);
-		obs_source_t *source = obs_sceneitem_get_source(entry.item);
-		obs_sceneitem_t *item = obs_scene_add(portrait, source);
+		additions.append(seedEntryFor(entry.item));
+	}
+
+	/* A source that has not reported a size yet cannot be the fill hero; the
+	 * first video source the desktop shows stands in for it, filling the
+	 * frame once its size is known. */
+	const SeedEntry *hero = firstLayout ? pickHero(additions) : nullptr;
+	const SeedEntry *shown = hero;
+	for (int i = 0; firstLayout && !shown && i < additions.size(); i++) {
+		if (additions[i].visible && hasVideo(additions[i].source))
+			shown = &additions[i];
+	}
+
+	for (const SeedEntry &addition : additions) {
+		obs_sceneitem_t *item = obs_scene_add(portrait, addition.source);
 		if (item) {
-			dsrApplyFramePlacement(item, source, false);
-			obs_sceneitem_set_visible(item, false);
+			dsrApplyFramePlacement(item, addition.source, &addition == shown);
+			obs_sceneitem_set_visible(item, &addition == shown);
 		}
 	}
 
@@ -325,9 +372,56 @@ void VerticalCanvas::onItemsChanged(void *data, calldata_t *cd)
 	QMetaObject::invokeMethod(self, [self, uuid]() { self->syncMembership(uuid); }, Qt::QueuedConnection);
 }
 
-/* Watch a portrait scene for the two changes the docks render: an item's
- * visibility, and z-order. Connecting is idempotent because libobs ignores a
- * duplicate callback and data pair. */
+namespace {
+
+struct SelectionPick {
+	obs_source_t *editing;
+	int64_t id;
+};
+
+struct SelectionMatch {
+	bool here;
+	int64_t id;
+};
+
+bool selectMatching(obs_scene_t *, obs_sceneitem_t *item, void *param)
+{
+	const SelectionMatch *match = static_cast<SelectionMatch *>(param);
+	const bool want = match->here && obs_sceneitem_get_id(item) == match->id;
+	if (obs_sceneitem_selected(item) != want)
+		obs_sceneitem_select(item, want);
+	return true;
+}
+
+bool selectInScene(void *param, obs_source_t *source)
+{
+	const SelectionPick *pick = static_cast<SelectionPick *>(param);
+	obs_scene_t *scene = obs_scene_from_source(source);
+	if (scene) {
+		SelectionMatch match = {source == pick->editing, pick->id};
+		obs_scene_enum_items(scene, selectMatching, &match);
+	}
+	return true;
+}
+
+} // namespace
+
+/* The scene's own selection follows the dock's, in every mobile scene, so an
+ * OBS Edit Transform dialog opened on a mobile item tracks the selection and a
+ * scene edited before a switch is not left holding one. */
+void VerticalCanvas::mirrorSelection(int64_t id)
+{
+	if (!canvas)
+		return;
+	SelectionPick pick = {editingCounterpart(), id};
+	obs_canvas_enum_scenes(canvas, selectInScene, &pick);
+	obs_source_release(pick.editing);
+}
+
+/* Watch a portrait scene for the two changes the docks render, an item's
+ * visibility and z-order, and for sources that report a size after being
+ * added. Connecting is idempotent because libobs ignores a duplicate callback
+ * and data pair. */
 void VerticalCanvas::connectCounterpartSignals(obs_scene_t *portrait)
 {
 	signal_handler_t *handler = obs_source_get_signal_handler(obs_scene_get_source(portrait));
@@ -337,6 +431,7 @@ void VerticalCanvas::connectCounterpartSignals(obs_scene_t *portrait)
 	signal_handler_connect(handler, "item_visible", onItemVisible, this);
 	signal_handler_connect(handler, "item_locked", onItemLocked, this);
 	signal_handler_connect(handler, "reorder", onSceneReordered, this);
+	dsrWatchPendingPlacement(portrait);
 }
 
 void VerticalCanvas::onItemVisible(void *data, calldata_t *cd)

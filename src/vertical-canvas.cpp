@@ -157,6 +157,39 @@ obs_source_t *VerticalCanvas::currentCounterpart() const
 	return counterpart;
 }
 
+obs_source_t *VerticalCanvas::editingLandscapeScene() const
+{
+	if (obs_frontend_preview_program_mode_active()) {
+		obs_source_t *preview = obs_frontend_get_current_preview_scene();
+		if (preview)
+			return preview;
+	}
+	return obs_frontend_get_current_scene();
+}
+
+obs_source_t *VerticalCanvas::editingCounterpart() const
+{
+	obs_source_t *editing = editingLandscapeScene();
+	obs_source_t *counterpart = counterpartOf(editing);
+	obs_source_release(editing);
+	return counterpart;
+}
+
+obs_source_t *VerticalCanvas::studioPreviewCounterpart() const
+{
+	if (!obs_frontend_preview_program_mode_active())
+		return nullptr;
+	obs_source_t *editing = editingCounterpart();
+	obs_source_t *program = currentCounterpart();
+	const bool same = editing == program;
+	obs_source_release(program);
+	if (same) {
+		obs_source_release(editing);
+		return nullptr;
+	}
+	return editing;
+}
+
 void VerticalCanvas::setEnabled(bool on)
 {
 	if (on == enabled())
@@ -223,6 +256,7 @@ void VerticalCanvas::setPortraitTarget(const QString &server, const QString &key
 void VerticalCanvas::setSelectedItemId(int64_t id)
 {
 	selectedItem = id;
+	mirrorSelection(id);
 	emit selectionChanged(id);
 }
 
@@ -413,9 +447,18 @@ void VerticalCanvas::handleFrontendEvent(enum obs_frontend_event event)
 	case OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED:
 		/* OBS sets its program transition rather than starting it on
 		 * both switches, so nothing is mirrored; the canvas is settled
-		 * on the program scene by hand. */
+		 * on the program scene by hand. The docks switch between the
+		 * program and the preview scene. */
 		hookCurrentTransition();
 		showCurrentScene();
+		setSelectedItemId(-1);
+		emit changed();
+		break;
+	case OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED:
+		/* Studio mode: the docks edit the preview scene while the
+		 * mobile program keeps the program scene until the transition. */
+		setSelectedItemId(-1);
+		emit changed();
 		break;
 	case OBS_FRONTEND_EVENT_PROFILE_CHANGED:
 		/* The vertical stream's audio track is chosen from the profile's

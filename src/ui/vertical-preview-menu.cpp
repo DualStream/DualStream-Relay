@@ -35,27 +35,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 
 #include "../vertical-canvas.hpp"
+#include "../vertical-layout.hpp"
 #include "dsr-source-icon.hpp"
 #include "dsr-ui-common.hpp"
 #include "vertical-common.hpp"
 
 namespace {
-
-/* Apply one of OBS's screen-fitting transforms, matching
- * CenterAlignSelectedItems. */
-void fitToCanvas(obs_sceneitem_t *item, enum obs_bounds_type boundsType)
-{
-	struct obs_transform_info info;
-	vec2_set(&info.pos, 0.0f, 0.0f);
-	vec2_set(&info.scale, 1.0f, 1.0f);
-	info.alignment = OBS_ALIGN_LEFT | OBS_ALIGN_TOP;
-	info.rot = 0.0f;
-	vec2_set(&info.bounds, (float)dsrPortraitWidth(), (float)dsrPortraitHeight());
-	info.bounds_type = boundsType;
-	info.bounds_alignment = OBS_ALIGN_CENTER;
-	info.crop_to_bounds = obs_sceneitem_get_bounds_crop(item);
-	obs_sceneitem_set_info2(item, &info);
-}
 
 void resetTransform(obs_sceneitem_t *item)
 {
@@ -86,15 +71,44 @@ void centerOnCanvas(obs_sceneitem_t *item)
 	obs_sceneitem_set_pos(item, &pos);
 }
 
+/* Top-left corner of an item's box on the canvas, whatever the sign of its
+ * scale. */
+struct vec2 boxTopLeft(obs_sceneitem_t *item)
+{
+	struct matrix4 box;
+	obs_sceneitem_get_box_transform(item, &box);
+	struct vec2 corner;
+	vec2_set(&corner, box.t.x, box.t.y);
+	const float dx[3] = {box.x.x, box.y.x, box.x.x + box.y.x};
+	const float dy[3] = {box.x.y, box.y.y, box.x.y + box.y.y};
+	for (int i = 0; i < 3; i++) {
+		corner.x = qMin(corner.x, box.t.x + dx[i]);
+		corner.y = qMin(corner.y, box.t.y + dy[i]);
+	}
+	return corner;
+}
+
+/* Mirror an item where it stands, as OBS's own flip does. Negating the scale
+ * alone mirrors around the item's position and throws the picture off the
+ * frame, so the box is moved back to where it was. */
 void flipItem(obs_sceneitem_t *item, bool horizontal)
 {
-	struct obs_transform_info info;
-	obs_sceneitem_get_info2(item, &info);
+	const struct vec2 before = boxTopLeft(item);
+	struct vec2 scale;
+	obs_sceneitem_get_scale(item, &scale);
 	if (horizontal)
-		info.scale.x = -info.scale.x;
+		scale.x = -scale.x;
 	else
-		info.scale.y = -info.scale.y;
-	obs_sceneitem_set_info2(item, &info);
+		scale.y = -scale.y;
+	obs_sceneitem_set_scale(item, &scale);
+	obs_sceneitem_force_update_transform(item);
+
+	const struct vec2 after = boxTopLeft(item);
+	struct vec2 pos;
+	obs_sceneitem_get_pos(item, &pos);
+	pos.x += before.x - after.x;
+	pos.y += before.y - after.y;
+	obs_sceneitem_set_pos(item, &pos);
 }
 
 /* A name no existing source is using, the way OBS disambiguates. */
@@ -118,11 +132,11 @@ QString uniqueSourceName(const QString &base)
  * vertical side alone would see it removed again on the next reconcile. */
 void VerticalPreview::addSource(const char *id)
 {
-	obs_source_t *sceneSource = manager->currentCounterpart();
+	obs_source_t *sceneSource = manager->editingCounterpart();
 	if (!sceneSource)
 		return;
 
-	obs_source_t *landscapeScene = obs_frontend_get_current_scene();
+	obs_source_t *landscapeScene = manager->editingLandscapeScene();
 	if (!landscapeScene) {
 		obs_source_release(sceneSource);
 		return;
@@ -205,11 +219,12 @@ void VerticalPreview::showContextMenu(const QPointF &canvasPos)
 		transform->addSeparator();
 		transform->addAction(dsrText("Vertical.ResetTransform"), this,
 				     onItem([](obs_sceneitem_t *target) { resetTransform(target); }));
-		transform->addAction(dsrText("Vertical.FitToScreen"), this, onItem([](obs_sceneitem_t *target) {
-					     fitToCanvas(target, OBS_BOUNDS_SCALE_INNER);
-				     }));
+		/* Plain transforms rather than full-canvas bounds boxes, so the
+		 * item's box stays its picture and hit-tests as itself. */
+		transform->addAction(dsrText("Vertical.FitToScreen"), this,
+				     onItem([](obs_sceneitem_t *target) { VerticalCanvas::placeItem(target, false); }));
 		transform->addAction(dsrText("Vertical.StretchToScreen"), this,
-				     onItem([](obs_sceneitem_t *target) { fitToCanvas(target, OBS_BOUNDS_STRETCH); }));
+				     onItem([](obs_sceneitem_t *target) { dsrApplyFrameStretch(target); }));
 		transform->addAction(dsrText("Vertical.CenterToScreen"), this,
 				     onItem([](obs_sceneitem_t *target) { centerOnCanvas(target); }));
 		transform->addSeparator();

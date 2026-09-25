@@ -111,8 +111,21 @@ public:
 	obs_canvas_t *canvasRef() const;
 
 	/* Scene source of the portrait counterpart of the current landscape
-	 * scene, referenced; the caller releases it. NULL when there is none. */
+	 * scene, referenced; the caller releases it. NULL when there is none.
+	 * This is what the mobile program carries. */
 	obs_source_t *currentCounterpart() const;
+
+	/* The landscape scene OBS is editing, and its portrait counterpart:
+	 * the studio mode preview while studio mode is on, the program
+	 * otherwise. The mobile docks show and edit this one. Referenced; the
+	 * caller releases it. */
+	obs_source_t *editingLandscapeScene() const;
+	obs_source_t *editingCounterpart() const;
+
+	/* The counterpart the mobile preview draws instead of the program: set
+	 * only in studio mode while the preview holds another scene than the
+	 * program. Referenced; the caller releases it. */
+	obs_source_t *studioPreviewCounterpart() const;
 
 	/* Selection is shared state: the preview dock draws it and handles the
 	 * mouse, the sources dock highlights its row. It lives here so neither
@@ -178,6 +191,9 @@ private:
 	obs_source_t *counterpartOf(obs_source_t *landscapeScene) const;
 
 	void connectCounterpartSignals(obs_scene_t *portrait);
+	/* Mark the selection in the mobile scenes themselves; implemented in
+	 * vertical-scenes.cpp. */
+	void mirrorSelection(int64_t id);
 
 	static void onItemsChanged(void *data, calldata_t *cd);
 	static void onSceneRenamed(void *data, calldata_t *cd);

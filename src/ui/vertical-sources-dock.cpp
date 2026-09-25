@@ -36,6 +36,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QVBoxLayout>
 #include <QVector>
 
+#include <algorithm>
 #include <functional>
 
 #include "../vertical-audio.hpp"
@@ -117,6 +118,17 @@ void VerticalSourcesDock::updateVisibility(qint64 itemId, bool visible)
 		QWidget *row = listLayout->itemAt(i)->widget();
 		if (!row || row->property("itemId").toLongLong() != itemId)
 			continue;
+		/* One of this scene's pictures is on the mobile frame now, so the
+		 * nothing-shown hint no longer applies. */
+		obs_sceneitem_t *item = visible ? dsrFindCounterpartItem(manager, itemId) : nullptr;
+		const bool picture =
+			item && (obs_source_get_output_flags(obs_sceneitem_get_source(item)) & OBS_SOURCE_VIDEO) != 0;
+		obs_sceneitem_release(item);
+		for (int j = 0; picture && j < listLayout->count(); j++) {
+			QWidget *entry = listLayout->itemAt(j)->widget();
+			if (entry && entry->property("nothingShown").toBool())
+				entry->hide();
+		}
 		QCheckBox *eye = row->findChild<QCheckBox *>(QStringLiteral("rowEye"));
 		if (eye && eye->isChecked() != visible) {
 			QSignalBlocker blocker(eye);
@@ -240,7 +252,7 @@ void VerticalSourcesDock::rebuildRows()
 	obs_source_t *sceneSource = nullptr;
 	if (!manager->enabled())
 		emptyKey = "Vertical.SourcesOff";
-	else if (!(sceneSource = manager->currentCounterpart()))
+	else if (!(sceneSource = manager->editingCounterpart()))
 		emptyKey = "Vertical.NoScene";
 
 	if (emptyKey) {
@@ -254,6 +266,23 @@ void VerticalSourcesDock::rebuildRows()
 
 	QVector<obs_sceneitem_t *> items;
 	obs_scene_enum_items(obs_scene_from_source(sceneSource), dsrCollectSceneItems, &items);
+
+	/* New sources arrive hidden on mobile, so a scene can hold sources and
+	 * still show a black frame; say so rather than leave the eye to explain. */
+	const auto drawsVideo = [](obs_sceneitem_t *item) {
+		return (obs_source_get_output_flags(obs_sceneitem_get_source(item)) & OBS_SOURCE_VIDEO) != 0;
+	};
+	const bool anyVideo = std::any_of(items.begin(), items.end(), drawsVideo);
+	const bool anyShown = std::any_of(items.begin(), items.end(), [&drawsVideo](obs_sceneitem_t *item) {
+		return drawsVideo(item) && obs_sceneitem_visible(item);
+	});
+	if (anyVideo && !anyShown) {
+		QLabel *hint = new QLabel(dsrText("Vertical.NothingShown"));
+		hint->setObjectName(QStringLiteral("mutedText"));
+		hint->setProperty("nothingShown", true);
+		hint->setWordWrap(true);
+		listLayout->addWidget(hint);
+	}
 
 	/* Topmost first, matching how the stack reads visually. */
 	for (int i = items.size() - 1; i >= 0; i--)
@@ -361,7 +390,7 @@ void VerticalSourcesDock::dropEvent(QDropEvent *event)
  * scene's reorder signal rebuilds the list afterwards. */
 void VerticalSourcesDock::applyDrop(qint64 itemId, int targetRow)
 {
-	obs_source_t *sceneSource = manager->currentCounterpart();
+	obs_source_t *sceneSource = manager->editingCounterpart();
 	if (!sceneSource)
 		return;
 

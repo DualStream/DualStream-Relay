@@ -116,7 +116,7 @@ bool dsrSetVerticalEnabled(QWidget *parent, bool on)
 
 obs_sceneitem_t *dsrFindCounterpartItem(VerticalCanvas *manager, int64_t itemId)
 {
-	obs_source_t *sceneSource = manager->currentCounterpart();
+	obs_source_t *sceneSource = manager->editingCounterpart();
 	if (!sceneSource)
 		return nullptr;
 

@@ -66,7 +66,9 @@ VerticalPreview::VerticalPreview(VerticalCanvas *manager, QWidget *parent) : QWi
 		applySelection(this->manager->selectedItemId());
 		/* The hovered item may have just been removed. */
 		setHoveredItem(nullptr);
+		refreshStudioPreview();
 	});
+	refreshStudioPreview();
 }
 
 VerticalPreview::~VerticalPreview()
@@ -74,6 +76,11 @@ VerticalPreview::~VerticalPreview()
 	destroyDisplay();
 
 	QMutexLocker lock(&mutex);
+	if (studioScene) {
+		obs_source_dec_showing(studioScene);
+		obs_source_release(studioScene);
+		studioScene = nullptr;
+	}
 	if (quad || overflowTexture || overflowEffect || stripedEffect) {
 		obs_enter_graphics();
 		if (quad)
@@ -141,6 +148,30 @@ void VerticalPreview::setSelectedItem(obs_sceneitem_t *item)
 	if (selected)
 		obs_sceneitem_release(selected);
 	selected = item;
+}
+
+/* In studio mode the docks edit the preview scene, so the preview draws that
+ * scene itself rather than the mobile program, and holds it showing the way
+ * OBS holds its own studio preview. */
+void VerticalPreview::refreshStudioPreview()
+{
+	obs_source_t *next = manager->studioPreviewCounterpart();
+	obs_source_t *previous = nullptr;
+	{
+		QMutexLocker lock(&mutex);
+		if (next == studioScene) {
+			obs_source_release(next);
+			return;
+		}
+		previous = studioScene;
+		studioScene = next;
+	}
+	if (next)
+		obs_source_inc_showing(next);
+	if (previous) {
+		obs_source_dec_showing(previous);
+		obs_source_release(previous);
+	}
 }
 
 void VerticalPreview::showEvent(QShowEvent *event)
@@ -285,7 +316,23 @@ void VerticalPreview::drawCallback(void *param, uint32_t cx, uint32_t cy)
 	gs_technique_end_pass(solidTech);
 	gs_technique_end(solidTech);
 
-	obs_render_canvas_texture(self->canvas);
+	if (self->studioScene) {
+		/* Clipped to the frame the way OBS draws its own preview, so
+		 * overhang reads as overhang rather than as broadcast. */
+		gs_viewport_push();
+		gs_projection_push();
+		gs_matrix_push();
+		gs_matrix_identity();
+		gs_ortho(0.0f, (float)dsrPortraitWidth(), 0.0f, (float)dsrPortraitHeight(), -100.0f, 100.0f);
+		gs_set_viewport((int)viewX, (int)viewY, (int)(dsrPortraitWidth() * scale),
+				(int)(dsrPortraitHeight() * scale));
+		obs_source_video_render(self->studioScene);
+		gs_matrix_pop();
+		gs_projection_pop();
+		gs_viewport_pop();
+	} else {
+		obs_render_canvas_texture(self->canvas);
+	}
 
 	/* Handles are sized in display pixels, so the item scale is left
 	 * behind and only the device ratio carries in. */
@@ -323,7 +370,7 @@ bool VerticalPreview::mapToCanvas(const QPointF &widgetPos, QPointF *canvasPos) 
 
 obs_sceneitem_t *VerticalPreview::itemAt(const QPointF &canvasPos) const
 {
-	obs_source_t *sceneSource = manager->currentCounterpart();
+	obs_source_t *sceneSource = manager->editingCounterpart();
 	if (!sceneSource)
 		return nullptr;
 

@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.3.3
+
+### Mobile
+
+- Flipping a source now mirrors it where it stands. It used to mirror
+  around the item's position, which pushed the picture off the frame.
+- Fit to screen and Stretch to screen now set a plain scale on the item,
+  so its outline is its picture: it selects, drags and resizes as itself
+  rather than as a box the size of the whole frame. Layouts saved by the
+  first release are converted the same way, once per scene, and a
+  transform you set afterwards in OBS's Edit Transform dialog is kept.
+- A source added before it has a picture, such as a capture that has not
+  started or a page still loading, is placed in the frame the moment it
+  reports a size, and once more before its scene goes on air.
+- A mobile scene made from a desktop scene that was still empty now lays
+  out the sources added to it later the way a new scene is laid out: the
+  largest visible source fills the frame and is shown, the rest arrive
+  hidden. Before, everything added to such a scene arrived hidden and the
+  mobile frame stayed black.
+- The Mobile Sources panel says when a scene has sources but none of them
+  is shown on mobile, and which control shows one.
+- In studio mode the mobile panels show and edit the preview scene, the
+  one you are preparing, and the mobile preview draws it. The mobile
+  stream keeps the program scene until you transition, as your desktop
+  stream does.
+- Selecting an item in the mobile preview selects it in the scene itself,
+  so OBS's Edit Transform dialog follows your selection there too.
+
+### Destinations
+
+- Changing which picture a live destination sends now asks first and says
+  what happens. On Twitch the change waits for the next go-live. Elsewhere
+  the picture taken away ends its broadcast for this stream, and changing
+  it back starts that picture again as a new broadcast. Adding a picture
+  asks nothing.
+- Saving a YouTube destination sends only the fields you changed, and
+  clears a field you emptied. Everything the desktop app stored on the
+  destination stays as it was.
+- The YouTube dialog now explains how a stream scheduled in YouTube Studio
+  is used: desktop takes it as is when it starts within 12 hours of going
+  live, and mobile is its own broadcast that takes the dialog's fields
+  first and copies the Studio stream for anything left empty.
+
 ## 0.3.2
 
 ### Dual format

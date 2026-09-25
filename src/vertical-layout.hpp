@@ -27,8 +27,21 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * and layouts authored at another canvas size are scaled to the current one. */
 
 /* Center an item in the 9:16 frame as a plain transform: fill covers with
- * edge overflow, fit letterboxes. */
+ * edge overflow, fit letterboxes. Sized by what the item shows after crop. */
 void dsrApplyFramePlacement(obs_sceneitem_t *item, obs_source_t *source, bool fill);
+
+/* Scale an item to cover the frame exactly on both axes, as a plain
+ * transform, ignoring its aspect. */
+void dsrApplyFrameStretch(obs_sceneitem_t *item);
+
+/* Place items that were added before their source had a size, the first
+ * time the size is known. */
+void dsrWatchPendingPlacement(obs_scene_t *portrait);
+
+/* Place any item of a portrait scene still waiting for its source size whose
+ * size is now known. A scene that is not being rendered never raises the
+ * signal the watch relies on, so this runs before one goes on air. */
+void dsrPlacePendingItems(obs_source_t *portraitScene);
 
 /* Record the canvas size a freshly seeded portrait scene was laid out at. */
 void dsrStampLayoutSize(obs_source_t *portraitScene);

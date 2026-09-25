@@ -38,6 +38,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 
 #include "vertical-geometry.hpp"
+#include "vertical-layout.hpp"
 
 namespace {
 
@@ -219,6 +220,7 @@ void VerticalCanvas::mirrorTransition(obs_source_t *main)
 	 * and NULL fades the portrait mix out with it. */
 	obs_source_t *dest = obs_transition_get_source(main, OBS_TRANSITION_SOURCE_B);
 	obs_source_t *counterpart = counterpartOf(dest);
+	dsrPlacePendingItems(counterpart);
 
 	obs_transition_start(transition, OBS_TRANSITION_MODE_AUTO, (uint32_t)mirroredDuration(dest), counterpart);
 
@@ -243,6 +245,7 @@ void VerticalCanvas::showCurrentScene()
 	}
 
 	obs_source_t *counterpart = currentCounterpart();
+	dsrPlacePendingItems(counterpart);
 
 	if (transition) {
 		obs_source_t *active = obs_transition_get_active_source(transition);

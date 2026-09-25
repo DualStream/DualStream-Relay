@@ -68,6 +68,7 @@ private:
 	bool mapToCanvas(const QPointF &widgetPos, QPointF *canvasPos) const;
 	void setSelectedItem(obs_sceneitem_t *item);
 	void applySelection(qint64 itemId);
+	void refreshStudioPreview();
 	/* Implemented in vertical-preview-edit.cpp. */
 	uint32_t handleAt(obs_sceneitem_t *item, const QPointF &canvasPos) const;
 	void beginStretch(obs_sceneitem_t *item, uint32_t handle);
@@ -105,6 +106,9 @@ private:
 	 * while holding the mutex. */
 	mutable QMutex mutex;
 	obs_canvas_t *canvas = nullptr;
+	/* In studio mode, the preview scene drawn in place of the mobile
+	 * program. Referenced and held showing. */
+	obs_source_t *studioScene = nullptr;
 	obs_sceneitem_t *selected = nullptr;
 	obs_sceneitem_t *hovered = nullptr;
 	/* Unit quad, drawn as the black canvas fill and as the resize handles. */

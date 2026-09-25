@@ -30,12 +30,16 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
 #include <QVBoxLayout>
 
+#include <obs-frontend-api.h>
+
 #include "../ladder.h"
+#include "../relay-output.h"
 #include "../relay-secrets.hpp"
 #include "dsr-ui-common.hpp"
 
@@ -229,27 +233,26 @@ void DestinationDialog::submitEdit()
 	}
 
 	if (ytLandscapeTitle) {
-		/* The relay replaces the metadata whole, and the desktop app keeps
-		 * fields of its own in it, so the fields here are laid over what
-		 * is stored and the rest travels back untouched. An emptied field
-		 * comes out; nothing is sent when nothing changed. */
+		/* Only fields changed here are sent; an emptied field is sent as
+		 * null, which clears it on the relay. Fields this dialog does not
+		 * show stay as stored. */
 		const QJsonObject before = existing.metadata.value(QStringLiteral("youtube")).toObject();
-		QJsonObject youtube = before;
-		const auto put = [&youtube](const char *key, const QString &value) {
-			if (value.isEmpty())
-				youtube.remove(QLatin1String(key));
-			else
-				youtube.insert(QLatin1String(key), value);
+		QJsonObject youtube;
+		const auto put = [&youtube, &before](const char *key, const QString &value) {
+			const QLatin1String name(key);
+			if (value == before.value(name).toString())
+				return;
+			youtube.insert(name, value.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(value));
 		};
 		put("landscape_title", ytLandscapeTitle->text().trimmed());
 		put("portrait_title", ytPortraitTitle->text().trimmed());
 		put("description", ytDescription->toPlainText().trimmed());
 		put("privacy_status", ytPrivacy->currentData().toString());
 
-		if (youtube != before) {
-			QJsonObject metadata = existing.metadata;
-			metadata.insert(QStringLiteral("youtube"), youtube);
-			body.insert(QStringLiteral("metadata"), metadata);
+		if (!youtube.isEmpty()) {
+			QJsonObject patch;
+			patch.insert(QStringLiteral("youtube"), youtube);
+			body.insert(QStringLiteral("metadata_patch"), patch);
 		}
 	}
 
@@ -257,6 +260,8 @@ void DestinationDialog::submitEdit()
 		accept();
 		return;
 	}
+	if (canvas != existing.canvas && !confirmCanvasChangeWhileLive(canvas))
+		return;
 
 	QPointer<DestinationDialog> self(this);
 	const QString id = existing.id;
@@ -271,6 +276,37 @@ void DestinationDialog::submitEdit()
 			dsrSecretStore(id, target);
 		self->accept();
 	});
+}
+
+/* What a canvas change does to a destination that is live is not obvious and
+ * not symmetric: a picture taken away ends its broadcast for this stream,
+ * Twitch keeps the shape its session started with until the next go-live, and
+ * a picture added needs no warning. */
+bool DestinationDialog::confirmCanvasChangeWhileLive(const QString &canvas)
+{
+	if (!existing.enabled || !obs_frontend_streaming_active() || !dsr_route_is_relay())
+		return true;
+
+	const auto carries = [](const QString &value, const char *which) {
+		return value == QLatin1String("both") || value == QLatin1String(which);
+	};
+	const bool dropsDesktop = carries(existing.canvas, "landscape") && !carries(canvas, "landscape");
+	const bool dropsMobile = carries(existing.canvas, "portrait") && !carries(canvas, "portrait");
+	const char *key = existing.platform == QLatin1String("twitch") ? "Destinations.CanvasLiveTwitch"
+			  : dropsMobile                                ? "Destinations.CanvasLiveEndsMobile"
+			  : dropsDesktop                               ? "Destinations.CanvasLiveEndsDesktop"
+								       : nullptr;
+	if (!key)
+		return true;
+
+	QMessageBox box(this);
+	box.setWindowTitle(dsrText("Destinations.CanvasLiveTitle"));
+	box.setText(dsrText(key));
+	QPushButton *confirm = box.addButton(dsrText("Button.Save"), QMessageBox::AcceptRole);
+	box.addButton(dsrText("Button.Cancel"), QMessageBox::RejectRole);
+	box.setDefaultButton(confirm);
+	box.exec();
+	return box.clickedButton() == confirm;
 }
 
 void DestinationDialog::showError(const QString &errorKey)
