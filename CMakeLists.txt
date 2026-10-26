@@ -86,6 +86,7 @@ target_sources(
     src/relay-http.cpp
     src/relay-pairing.cpp
     src/relay-secrets.cpp
+    src/relay-slate.cpp
     src/relay-status.cpp
     src/vertical-canvas.cpp
     src/vertical-layout.cpp
@@ -118,6 +119,7 @@ target_sources(
     src/ui/destination-dialog.cpp
     src/ui/destination-dialog-add.cpp
     src/ui/settings-dialog.cpp
+    src/ui/settings-slate.cpp
 )
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})

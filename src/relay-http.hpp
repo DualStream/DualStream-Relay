@@ -42,6 +42,16 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * about once a second through its progress callback) and then joins, so
  * teardown is bounded by that poll rather than by any network timeout. */
 
+/* What a request needs beyond its verb, url and body. The defaults describe
+ * an API call; a slate's bytes need both of them changed. */
+struct DsrHttpOptions {
+	/* Content-Type for a request that carries a body. Empty means JSON. */
+	QByteArray contentType;
+	/* Ceiling on the whole transfer. Zero means the default, which suits an
+	 * API call and is far too short for a file of any size. */
+	long timeoutMs = 0;
+};
+
 struct DsrHttpReply {
 	int status = 0;
 	bool transportOk = false;
@@ -55,7 +65,8 @@ struct DsrHttpReply {
  * an output's start thread. shouldAbort is polled through the transfer and a
  * true ends it early. */
 DsrHttpReply dsrHttpRequestSync(const QByteArray &verb, const QByteArray &url, const QByteArray &payload, bool hasBody,
-				const QByteArray &bearer, std::function<bool()> shouldAbort);
+				const QByteArray &bearer, std::function<bool()> shouldAbort,
+				const DsrHttpOptions &options = {});
 
 class DsrHttpClient {
 public:
@@ -71,7 +82,7 @@ public:
 	 * the UI thread. Once teardown has begun completions are no longer
 	 * delivered; callers guard their own lifetime with a QPointer. */
 	void send(const QByteArray &verb, const QByteArray &url, const QByteArray &payload, bool hasBody,
-		  const QByteArray &bearer, Completion completion);
+		  const QByteArray &bearer, Completion completion, const DsrHttpOptions &options = {});
 
 private:
 	struct Worker {

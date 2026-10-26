@@ -60,7 +60,8 @@ int checkAbort(void *clientp, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
 }
 
 DsrHttpReply runRequest(const QByteArray &verb, const QByteArray &url, const QByteArray &payload, bool hasBody,
-			const QByteArray &bearer, const std::function<bool()> &shouldAbort)
+			const QByteArray &bearer, const std::function<bool()> &shouldAbort,
+			const DsrHttpOptions &options)
 {
 	DsrHttpReply reply;
 	std::string body;
@@ -71,8 +72,11 @@ DsrHttpReply runRequest(const QByteArray &verb, const QByteArray &url, const QBy
 
 	struct curl_slist *headers = nullptr;
 	headers = curl_slist_append(headers, "Accept: application/json");
-	if (hasBody)
-		headers = curl_slist_append(headers, "Content-Type: application/json");
+	if (hasBody) {
+		const QByteArray type = options.contentType.isEmpty() ? QByteArray("application/json")
+								      : options.contentType;
+		headers = curl_slist_append(headers, ("Content-Type: " + type).constData());
+	}
 	if (!bearer.isEmpty()) {
 		headers = curl_slist_append(headers, ("Authorization: " + bearer).constData());
 		/* Some deployments strip the Authorization header; the API
@@ -88,7 +92,7 @@ DsrHttpReply runRequest(const QByteArray &verb, const QByteArray &url, const QBy
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, appendBody);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
 	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, kConnectTimeoutMs);
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, kRequestTimeoutMs);
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, options.timeoutMs > 0 ? options.timeoutMs : kRequestTimeoutMs);
 	/* Required for timeouts on threads: signal-based DNS timeout handling
 	 * is not thread safe. */
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
@@ -116,13 +120,21 @@ DsrHttpReply runRequest(const QByteArray &verb, const QByteArray &url, const QBy
 	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
 	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
 
+	/* The body is handed over by pointer, not copied: it outlives the
+	 * transfer in both callers, and a copy of a slate would be a second
+	 * buffer the size of the upload. The length is always stated, because
+	 * without it curl measures the body with strlen and stops at the first
+	 * zero byte, which every image and video has within a few hundred. */
 	if (verb == "POST") {
 		curl_easy_setopt(curl, CURLOPT_POST, 1L);
-		curl_easy_setopt(curl, CURLOPT_COPYPOSTFIELDS, hasBody ? payload.constData() : "");
+		curl_easy_setopt(curl, CURLOPT_POSTFIELDS, hasBody ? payload.constData() : "");
+		curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)(hasBody ? payload.size() : 0));
 	} else if (verb != "GET") {
 		curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, verb.constData());
-		if (hasBody)
-			curl_easy_setopt(curl, CURLOPT_COPYPOSTFIELDS, payload.constData());
+		if (hasBody) {
+			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.constData());
+			curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)payload.size());
+		}
 	}
 
 	const CURLcode result = curl_easy_perform(curl);
@@ -142,14 +154,15 @@ DsrHttpReply runRequest(const QByteArray &verb, const QByteArray &url, const QBy
 } // namespace
 
 DsrHttpReply dsrHttpRequestSync(const QByteArray &verb, const QByteArray &url, const QByteArray &payload, bool hasBody,
-				const QByteArray &bearer, std::function<bool()> shouldAbort)
+				const QByteArray &bearer, std::function<bool()> shouldAbort,
+				const DsrHttpOptions &options)
 {
 	ensureCurlInit();
 	if (!shouldAbort)
 		shouldAbort = []() {
 			return false;
 		};
-	return runRequest(verb, url, payload, hasBody, bearer, shouldAbort);
+	return runRequest(verb, url, payload, hasBody, bearer, shouldAbort, options);
 }
 
 DsrHttpClient::DsrHttpClient() : aborting(std::make_shared<std::atomic<bool>>(false))
@@ -186,7 +199,7 @@ void DsrHttpClient::reapFinished()
 }
 
 void DsrHttpClient::send(const QByteArray &verb, const QByteArray &url, const QByteArray &payload, bool hasBody,
-			 const QByteArray &bearer, Completion completion)
+			 const QByteArray &bearer, Completion completion, const DsrHttpOptions &options)
 {
 	std::lock_guard<std::mutex> lock(mutex);
 	if (aborting->load())
@@ -202,17 +215,17 @@ void DsrHttpClient::send(const QByteArray &verb, const QByteArray &url, const QB
 	 * completion carries its own QPointer guard for that. */
 	auto abort = aborting;
 	auto finished = worker.finished;
-	worker.thread = std::thread(
-		[verb, url, payload, hasBody, bearer, completion = std::move(completion), abort, finished]() {
-			const DsrHttpReply reply =
-				runRequest(verb, url, payload, hasBody, bearer, [abort]() { return abort->load(); });
-			if (!abort->load() && completion) {
-				QMetaObject::invokeMethod(
-					QCoreApplication::instance(), [completion, reply]() { completion(reply); },
-					Qt::QueuedConnection);
-			}
-			finished->store(true);
-		});
+	worker.thread = std::thread([verb, url, payload, hasBody, bearer, options, completion = std::move(completion),
+				     abort, finished]() {
+		const DsrHttpReply reply =
+			runRequest(verb, url, payload, hasBody, bearer, [abort]() { return abort->load(); }, options);
+		if (!abort->load() && completion) {
+			QMetaObject::invokeMethod(
+				QCoreApplication::instance(), [completion, reply]() { completion(reply); },
+				Qt::QueuedConnection);
+		}
+		finished->store(true);
+	});
 
 	workers.push_back(std::move(worker));
 }

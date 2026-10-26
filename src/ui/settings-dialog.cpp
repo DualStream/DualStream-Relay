@@ -40,19 +40,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 
 #include "../relay-output.h"
+#include "../relay-slate.hpp"
 #include "../vertical-canvas.hpp"
 #include "dsr-ui-common.hpp"
 #include "vertical-common.hpp"
 
 namespace {
-
-QLabel *makeNote(const QString &text)
-{
-	QLabel *note = new QLabel(text);
-	note->setObjectName(QStringLiteral("settingsNote"));
-	note->setWordWrap(true);
-	return note;
-}
 
 QPushButton *makeSecondary(const QString &text)
 {
@@ -89,6 +82,8 @@ SettingsDialog::SettingsDialog(RelayAuth *auth, RelayStatus *status, QWidget *pa
 	  auth(auth),
 	  status(status)
 {
+	slates = new RelaySlate(auth, this);
+
 	setWindowTitle(dsrText("Settings.Title"));
 	setMinimumWidth(440);
 	setStyleSheet(dsrSharedStyleSheet());
@@ -99,6 +94,7 @@ SettingsDialog::SettingsDialog(RelayAuth *auth, RelayStatus *status, QWidget *pa
 	buildAccountCard(root);
 	buildStreamingCard(root);
 	buildProtectionCard(root);
+	buildSlateCard(root);
 	if (VerticalCanvas::instance())
 		buildVerticalCard(root);
 	buildDiagnosticsCard(root);
@@ -157,7 +153,7 @@ void SettingsDialog::buildAccountCard(QVBoxLayout *root)
 	row->addWidget(signOut);
 	body->addLayout(row);
 
-	body->addWidget(makeNote(dsrText("Settings.ConsoleNote")));
+	body->addWidget(dsrMakeNote(dsrText("Settings.ConsoleNote")));
 }
 
 void SettingsDialog::buildStreamingCard(QVBoxLayout *root)
@@ -199,7 +195,7 @@ void SettingsDialog::buildStreamingCard(QVBoxLayout *root)
 	actions->addStretch();
 	body->addLayout(actions);
 
-	routeNote = makeNote(QString());
+	routeNote = dsrMakeNote(QString());
 	body->addWidget(routeNote);
 }
 
@@ -220,7 +216,7 @@ void SettingsDialog::buildProtectionCard(QVBoxLayout *root)
 
 	/* Says why the box cannot be moved yet, rather than leaving a greyed
 	 * control with no explanation. */
-	protectionNote = makeNote(dsrText("Settings.ProtectionLoading"));
+	protectionNote = dsrMakeNote(dsrText("Settings.ProtectionLoading"));
 	body->addWidget(protectionNote);
 }
 
@@ -228,7 +224,7 @@ void SettingsDialog::buildVerticalCard(QVBoxLayout *root)
 {
 	QVBoxLayout *body = addCard(root, "Settings.Vertical");
 	body->addWidget(buildVerticalToggle());
-	body->addWidget(makeNote(dsrText("Settings.VerticalNote")));
+	body->addWidget(dsrMakeNote(dsrText("Settings.VerticalNote")));
 }
 
 void SettingsDialog::buildDiagnosticsCard(QVBoxLayout *root)

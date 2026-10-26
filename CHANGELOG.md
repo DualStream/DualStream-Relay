@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.4
+
+### Standby screen
+
+- Disconnect protection can now show something of your own in place of
+  the DualStream standby screen. Settings has a Standby screen card:
+  choose an image, a GIF or a video up to 50 MB (PNG, JPEG, GIF, MP4 or
+  WebM), and that is what viewers see while the relay holds your stream
+  up. One file covers both your desktop and mobile streams, fitted
+  inside each frame. A GIF or a video loops, and a video plays its first
+  60 seconds. Remove it at any time to go back to the DualStream screen.
+
+### Relay
+
+- The warning about a video bitrate the relay will not carry now appears
+  above 7500 kbps, where it used to wait until 8100. 7500 is the figure
+  every account clears, and above it the relay can re-encode your stream
+  at lower quality for the rest of the session, so the warning now lands
+  where that starts to happen.
+
 ## 0.3.3
 
 ### Mobile

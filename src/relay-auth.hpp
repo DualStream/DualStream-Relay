@@ -97,6 +97,14 @@ public:
 	 * carry no refresh credential. */
 	void ensureFreshToken();
 
+	/* A request to a host outside the API, carrying no session token: the
+	 * signed storage url a slate's bytes are PUT to. Deliberately not routed
+	 * through the authenticated path, because the Authorization header this
+	 * plugin sends is a custom one and would travel to that host with it. */
+	void sendUnauthenticated(const QByteArray &verb, const QByteArray &url, const QByteArray &payload,
+				 const QByteArray &contentType, long timeoutMs,
+				 std::function<void(const DsrHttpReply &)> done);
+
 	void get(const QString &path, Handler handler);
 	void post(const QString &path, const QJsonObject &body, Handler handler);
 	void patch(const QString &path, const QJsonObject &body, Handler handler);

@@ -224,6 +224,16 @@ void RelayAuth::finishRequest(int status, bool transportOk, const QByteArray &ra
 		handler(result);
 }
 
+void RelayAuth::sendUnauthenticated(const QByteArray &verb, const QByteArray &url, const QByteArray &payload,
+				    const QByteArray &contentType, long timeoutMs,
+				    std::function<void(const DsrHttpReply &)> done)
+{
+	DsrHttpOptions options;
+	options.contentType = contentType;
+	options.timeoutMs = timeoutMs;
+	http.send(verb, url, payload, !payload.isEmpty(), QByteArray(), std::move(done), options);
+}
+
 void RelayAuth::get(const QString &path, Handler handler)
 {
 	request("GET", path, QJsonObject(), false, std::move(handler), false);

@@ -49,6 +49,9 @@ QFrame *dsrMakeSeparator();
 /* Bold section heading from a locale key. */
 QLabel *dsrMakeSectionHeader(const char *key);
 
+/* Quiet wrapped line under a control, explaining what it does. */
+QLabel *dsrMakeNote(const QString &text);
+
 /* Re-evaluate a widget's style after a dynamic property changed. */
 void dsrRepolish(QWidget *widget);
 

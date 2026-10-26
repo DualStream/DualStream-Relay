@@ -43,11 +43,15 @@ struct dsr_canvas_limits {
 	 * the relay service caps an encoder set higher at stream start. */
 	int cap_kbps;
 
-	/* The video bitrate the relay refuses. Its rate gate trips at one and
-	 * a half times the tier it resolves for the account, and a stream
-	 * that trips it twice is re-encoded on the relay for the rest of the
-	 * session. The plugin cannot see which tier an account resolves to,
-	 * so this is the figure every account clears. */
+	/* The highest video bitrate the relay passes through untouched. Its
+	 * rate gate trips at one and a half times the tier it resolves for the
+	 * account, never above the 8000 kbps of video Twitch and Kick take, and
+	 * a stream over that line for three ten-second windows in a row is
+	 * re-encoded on the relay for the rest of the session. A CBR encoder set
+	 * at or below this figure, with the one or two seconds of buffer OBS's
+	 * x264, NVENC, AMD and Intel encoders default to, can never trip it.
+	 * The relay's ingest target carries the account's own figure, which
+	 * replaces this one; this default is the figure every account clears. */
 	int unfit_kbps;
 
 	/* Audio bitrate the relay's platforms are served at. */

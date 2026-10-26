@@ -28,12 +28,13 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 class QCheckBox;
 class QLabel;
 class QPushButton;
+class RelaySlate;
 class QVBoxLayout;
 
-/* Only what has to be local lives here: account, the disconnect protection
- * toggle, stream routing, diagnostics. Slates, billing and key management
- * belong to the web console, which keeps this dialog and the auth surface
- * small. */
+/* Only what has to be local lives here: account, disconnect protection and the
+ * standby screen it plays, stream routing, diagnostics. Billing and key
+ * management belong to the account page, which keeps this dialog and the auth
+ * surface small. */
 class SettingsDialog : public QDialog {
 	Q_OBJECT
 
@@ -50,6 +51,13 @@ private:
 	void buildAccountCard(QVBoxLayout *root);
 	void buildStreamingCard(QVBoxLayout *root);
 	void buildProtectionCard(QVBoxLayout *root);
+
+	/* Implemented in settings-slate.cpp. */
+	void buildSlateCard(QVBoxLayout *root);
+	void refreshSlateCard();
+	void chooseSlate();
+	void removeSlate();
+
 	void buildVerticalCard(QVBoxLayout *root);
 	void buildDiagnosticsCard(QVBoxLayout *root);
 
@@ -70,4 +78,10 @@ private:
 	QCheckBox *protectionCheck = nullptr;
 	QLabel *protectionNote = nullptr;
 	bool protectionLoaded = false;
+
+	RelaySlate *slates = nullptr;
+	QLabel *slateState = nullptr;
+	QLabel *slateNote = nullptr;
+	QPushButton *slateChoose = nullptr;
+	QPushButton *slateRemove = nullptr;
 };

@@ -90,7 +90,9 @@ cost you any extra upload speed.
 
 **Stays live when your internet drops.** Your platforms keep showing your
 standby screen instead of ending the stream, and the panel counts down how
-long you have to reconnect.
+long you have to reconnect. Choose what that screen shows in the plugin's
+settings, under Standby screen: an image, a GIF or a short video. Leave it
+alone and viewers see the DualStream one.
 
 **Turn platforms on and off mid-stream.** Flip a switch and that platform
 joins or leaves within a few seconds. You do not have to stop streaming. It

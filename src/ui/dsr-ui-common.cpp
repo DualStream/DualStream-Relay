@@ -108,6 +108,14 @@ QLabel *dsrMakeSectionHeader(const char *key)
 	return label;
 }
 
+QLabel *dsrMakeNote(const QString &text)
+{
+	QLabel *note = new QLabel(text);
+	note->setObjectName(QStringLiteral("settingsNote"));
+	note->setWordWrap(true);
+	return note;
+}
+
 void dsrRepolish(QWidget *widget)
 {
 	widget->style()->unpolish(widget);
