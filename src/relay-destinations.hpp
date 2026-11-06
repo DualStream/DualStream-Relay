@@ -81,6 +81,9 @@ public:
 	bool hasEnabledTwitch() const;
 	int maxDestinations() const { return maxDest; }
 	int graceWindowSeconds() const { return graceSeconds; }
+	/* The relay grants this account a canvas above 1080p, which is what a
+	 * contribution plan is for. */
+	bool planCapable() const { return above1080p; }
 
 	/* Locale key for a server-side error code, so dialogs never surface a
 	 * bare code string. */
@@ -106,4 +109,5 @@ private:
 	bool limitsFetched = false;
 	int maxDest = 8;
 	int graceSeconds = 300;
+	bool above1080p = false;
 };

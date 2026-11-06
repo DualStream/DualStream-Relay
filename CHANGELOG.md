@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.3.5
+
+### Destinations
+
+- Facebook Live, Facebook Reels and TikTok are easier to find. They were
+  always there, under a heading that read Custom RTMP, which is not what
+  anyone goes looking for. That section is now called Add with a stream
+  key and says which platforms it covers. Choosing Facebook also tells you
+  where its stream key lives and which setting keeps it working next time.
+- A destination added with a stream key now says what it accepts: 1080p,
+  1440p or 2160p. Each destination is served the largest size it takes, so
+  a server left at 1080p is never sent more than that.
+
+### Picture
+
+- A canvas above 1080p can now go out at more than one size, with each
+  destination served the largest it accepts. A 4K canvas can reach YouTube
+  at 4K while Twitch is served 1080p from the same stream, instead of every
+  destination getting the same one. Your computer encodes each size, so
+  both the upload and the encoding load grow with them. This needs a
+  DualStream subscription and is arranged per account.
+- The warning about a canvas above 1080p read as though DualStream capped
+  you at 1080p, which it never did. It now says what actually happens, and
+  where your canvas is going out at more than one size it says that
+  instead of warning you about something that is working. While you are
+  live it names the sizes going up.
+- The dock now notices a change to your canvas or output resolution. Until
+  now everything it said about the picture was worked out the last time
+  something else changed, so switching to 4K left the old answer on screen.
+
 ## 0.3.4
 
 ### Standby screen

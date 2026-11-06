@@ -109,7 +109,8 @@ void RelayDock::refreshUi()
 
 	/* What the next stream's output must carry. Read by the relay service
 	 * when OBS sets the stream up, before any output exists. */
-	dsr_ladder_set_wanted(ladderWanted());
+	dsr_ladder_set_dual_format(ladderWanted());
+	dsr_ladder_set_plans_allowed(plansAllowed());
 
 	if (state == State::Protected && current != State::Protected && !status->protectedSince().isValid())
 		protectedLocalSince = QDateTime::currentDateTimeUtc();
@@ -219,8 +220,11 @@ void RelayDock::refreshUi()
 					setBanner(note, "warn", QString(), nullptr);
 				else if (state == State::Ready && mobileNote(mobileText, mobileAction, mobileFn))
 					setBanner(mobileText, "warn", mobileAction, mobileFn);
-				else
-					setBanner(outputMismatch(), "warn", QString(), nullptr);
+				else {
+					const char *mismatchKind = "warn";
+					const QString mismatch = outputMismatch(mismatchKind);
+					setBanner(mismatch, mismatchKind, QString(), nullptr);
+				}
 			}
 			break;
 		default:

@@ -68,6 +68,16 @@ QString presetCanvas(const QString &preset)
 	return QStringLiteral("landscape");
 }
 
+/* Where a preset's stream key is found, for the platforms whose own wording
+ * sends people looking in the wrong place. Empty where saying nothing beats
+ * saying something that may be out of date. */
+const char *presetHelpKey(const QString &preset)
+{
+	if (preset == QLatin1String("facebook") || preset == QLatin1String("facebook_reels"))
+		return "Destinations.Help.Facebook";
+	return "";
+}
+
 } // namespace
 
 void DestinationDialog::buildAddUi()
@@ -102,6 +112,10 @@ void DestinationDialog::buildAddUi()
 
 	layout->addWidget(dsrMakeSeparator());
 	layout->addWidget(dsrMakeSectionHeader("Destinations.CustomRtmp"));
+	/* The platforms live in the Platform list below, which is the one place
+	 * somebody looking for their own platform by name does not think to
+	 * open. Naming them here is what makes them findable. */
+	layout->addWidget(dsrMakeNote(dsrText("Destinations.CustomRtmpNote")));
 
 	QFormLayout *form = new QFormLayout;
 	presetCombo = new QComboBox;
@@ -110,6 +124,12 @@ void DestinationDialog::buildAddUi()
 	presetCombo->addItem(dsrText("Destinations.Preset.Facebook"), QStringLiteral("facebook"));
 	presetCombo->addItem(dsrText("Destinations.Preset.FacebookReels"), QStringLiteral("facebook_reels"));
 	form->addRow(dsrText("Destinations.Platform"), presetCombo);
+
+	/* Shown only for a platform that hides its key somewhere unobvious, so
+	 * the answer is here rather than in a support thread. */
+	presetNote = dsrMakeNote(QString());
+	presetNote->setVisible(false);
+	form->addRow(presetNote);
 
 	labelEdit = new QLineEdit;
 	form->addRow(dsrText("Destinations.Label"), labelEdit);
@@ -121,6 +141,15 @@ void DestinationDialog::buildAddUi()
 	keyEdit = new QLineEdit;
 	keyEdit->setEchoMode(QLineEdit::Password);
 	form->addRow(dsrText("Destinations.StreamKey"), keyEdit);
+
+	/* What this server accepts. The relay serves every destination the
+	 * largest picture it takes, so a server told it can have more than
+	 * 1080p is the only way it ever gets more. */
+	heightCombo = new QComboBox;
+	heightCombo->addItem(dsrText("Destinations.Height1080"), 1080);
+	heightCombo->addItem(dsrText("Destinations.Height1440"), 1440);
+	heightCombo->addItem(dsrText("Destinations.Height2160"), 2160);
+	form->addRow(dsrText("Destinations.MaxHeight"), heightCombo);
 
 	canvasCombo = new QComboBox;
 	canvasNote = new QLabel;
@@ -177,6 +206,11 @@ void DestinationDialog::applyPreset()
 	 * platform name, and prefilling it would make every destination on the
 	 * platform arrive with the same one. */
 	labelEdit->setPlaceholderText(dsrPlatformName(preset));
+
+	const char *help = presetHelpKey(preset);
+	const QString helpText = *help ? dsrText(help) : QString();
+	presetNote->setText(helpText);
+	presetNote->setVisible(!helpText.isEmpty());
 
 	fillCanvasCombo(canvasCombo, QString(),
 			preset.isEmpty() ? canvasCombo->currentData().toString() : presetCanvas(preset), canvasNote);
@@ -331,6 +365,7 @@ void DestinationDialog::submitCustom()
 	body.insert(QStringLiteral("rtmp_url"), serverEdit->text().trimmed());
 	body.insert(QStringLiteral("rtmp_key"), keyEdit->text());
 	body.insert(QStringLiteral("canvas"), canvasCombo->currentData().toString());
+	body.insert(QStringLiteral("video_max_height"), heightCombo->currentData().toInt());
 	if (!labelEdit->text().trimmed().isEmpty())
 		body.insert(QStringLiteral("label"), labelEdit->text().trimmed());
 	body.insert(QStringLiteral("terms_ack"), true);

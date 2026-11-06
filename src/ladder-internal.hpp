@@ -33,3 +33,9 @@ void dsrLadderAuth(QByteArray &apiBase, QByteArray &bearer);
  * is on the website waiting to be taken down once the session ends. */
 void dsrLadderSetNote(const QString &note);
 void dsrLadderSetPreparedPending(bool pending);
+
+/* Ask the relay for a contribution plan for OBS's own canvas and fill the
+ * spec from it. Implemented in ladder-plan.cpp. Anything short of a plan
+ * worth carrying answers DSR_LADDER_NONE, which publishes one picture as
+ * before, so a refusal never costs a go-live. */
+enum dsr_ladder_outcome dsrLadderAskPlan(struct dsr_ladder_spec *out, const volatile bool *abort_flag);

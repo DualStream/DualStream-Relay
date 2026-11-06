@@ -132,6 +132,11 @@ struct dsr_ladder_encoders *dsr_ladder_attach(obs_output_t *output, const struct
 		obs_data_set_string(settings, "rate_control", "CBR");
 		obs_data_set_string(settings, "profile", rendition.hevc ? "main" : "high");
 		obs_data_set_bool(settings, "repeat_headers", true);
+		/* A rung serving a platform that segments on keyframes must not
+		 * reference across one. x264 is the encoder that has to be told;
+		 * NVENC, AMF and QSV emit an IDR at every keyframe already. */
+		if (rendition.closed_gop && strcmp(encoderId, "obs_x264") == 0)
+			obs_data_set_string(settings, "x264opts", "open-gop=0");
 
 		char name[32];
 		snprintf(name, sizeof(name), "dsr_ladder_%zu", i);

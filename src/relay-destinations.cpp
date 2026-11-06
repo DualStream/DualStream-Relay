@@ -97,6 +97,13 @@ void RelayDestinations::fetchLimits()
 			maxDest = destinations;
 		if (grace > 0)
 			graceSeconds = grace;
+		/* Answered against this client's own version line, so it says
+		 * what the plugin may do rather than what some other client
+		 * could. */
+		above1080p = result.body.value(QStringLiteral("capabilities"))
+				     .toObject()
+				     .value(QStringLiteral("above_1080p"))
+				     .toBool();
 		limitsFetched = true;
 		emit changed();
 	});

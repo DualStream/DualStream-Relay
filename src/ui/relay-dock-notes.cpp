@@ -42,17 +42,28 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * destinations are enabled is in the rows below it, and the delivered bitrate
  * is not something the user can act on, so neither is repeated here. Empty
  * when the settings and the relay agree, which is the common case. */
-QString RelayDock::outputMismatch() const
+QString RelayDock::outputMismatch(const char *&kind) const
 {
 	QStringList issues;
+	/* Said in the same banner, but not a warning: nothing is wrong and
+	 * there is nothing to act on. A banner carries one kind, so a note
+	 * alone is styled as one. */
+	QStringList working;
 	const struct dsr_canvas_limits &limits = dsr_limits_get()->landscape;
 
 	struct dsr_video_summary video;
 	if (dsr_get_video_summary(&video)) {
 		const uint32_t shortSide = video.output_width < video.output_height ? video.output_width
 										    : video.output_height;
-		if (shortSide > limits.max_height)
-			issues.append(QString(dsrText("Preflight.Downscale")).arg(limits.max_height));
+		/* A canvas the relay cannot hand to every platform whole is
+		 * either a warning or the feature working, and the streamer has
+		 * no other way to tell which, so both are said. */
+		if (shortSide > limits.max_height) {
+			const bool planned = dsr_ladder_plans_wanted();
+			(planned ? working : issues)
+				.append(QString(dsrText(planned ? "Preflight.PlanCarries" : "Preflight.Downscale"))
+						.arg(limits.max_height));
+		}
 		if (video.fps > limits.max_fps + 0.5)
 			issues.append(QString(dsrText("Preflight.FpsCap")).arg(qRound(limits.max_fps)));
 	}
@@ -84,7 +95,8 @@ QString RelayDock::outputMismatch() const
 				      .arg(mobileTotal));
 	}
 
-	return issues.join(QStringLiteral(" "));
+	kind = issues.isEmpty() ? "info" : "warn";
+	return (issues + working).join(QStringLiteral(" "));
 }
 
 bool RelayDock::mobileNote(QString &text, QString &actionText, std::function<void()> &action)
@@ -144,12 +156,37 @@ bool RelayDock::ladderWanted() const
 	return false;
 }
 
+/* Whether the relay would grant this account a contribution plan: the
+ * profile is on the relay's own route, signed in, and the relay says this
+ * account may send a canvas above the one it carries whole. Whether the
+ * canvas about to go out is such a canvas is a separate question, asked of
+ * OBS at the moment it matters, because nothing announces a change to the
+ * video settings and a closed dock is watching for nothing. */
+bool RelayDock::plansAllowed() const
+{
+	if (!dsr_ladder_available() || !auth->signedIn() || !targetFetched || !dsr_route_is_relay() ||
+	    dsr_route_needs_upgrade())
+		return false;
+	return destinations->planCapable();
+}
+
 QString RelayDock::ladderNote() const
 {
 	const size_t renditions = dsr_ladder_active_renditions();
 	if (renditions == 0)
 		return QString();
-	return QString(dsrText("Ladder.Active")).arg((int)renditions);
+	/* The two layouts read nothing alike to a streamer: one is a single
+	 * Twitch broadcast, the other is a size per destination. */
+	if (dsr_ladder_dual_format())
+		return QString(dsrText("Ladder.Active")).arg((int)renditions);
+	/* A plan is worth naming the sizes of. They are the whole point of
+	 * it, and a count on its own says nothing about what any platform
+	 * actually received. */
+	uint32_t tallest = 0;
+	uint32_t shortest = 0;
+	if (!dsr_ladder_active_heights(&tallest, &shortest))
+		return QString();
+	return QString(dsrText("Ladder.PlanActive")).arg(tallest).arg(shortest);
 }
 
 /* What this session is doing without, when the ladder could not be had in

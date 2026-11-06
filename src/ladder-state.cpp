@@ -26,6 +26,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "ladder.h"
 #include "ladder-internal.hpp"
+#include "relay-limits.h"
 
 #include <cstring>
 #include <mutex>
@@ -36,12 +37,28 @@ namespace {
 
 std::mutex stateMutex;
 bool wantedFlag = false;
+bool plansAllowedFlag = false;
 QByteArray apiBase;
 QByteArray bearer;
 size_t activeRenditions = 0;
+uint32_t activeTallest = 0;
+uint32_t activeShortest = 0;
 bool preparedPending = false;
 uint64_t sessionCounter = 0;
 QByteArray sessionNote;
+
+/* Whether the canvas OBS would send now is above what the relay carries to
+ * every platform whole. Read from OBS each time it is asked, so the answer
+ * is the canvas as it stands rather than the canvas when something last
+ * thought to look. */
+bool canvasAbovePlainCeiling()
+{
+	struct obs_video_info ovi;
+	if (!obs_get_video_info(&ovi))
+		return false;
+	const uint32_t shortSide = ovi.output_width < ovi.output_height ? ovi.output_width : ovi.output_height;
+	return shortSide > dsr_limits_get()->landscape.max_height;
+}
 
 } // namespace
 
@@ -61,16 +78,53 @@ void dsr_ladder_output_forget_session(obs_output_t *output)
 }
 #endif
 
-void dsr_ladder_set_wanted(bool wanted)
+void dsr_ladder_set_dual_format(bool wanted)
 {
 	const std::lock_guard<std::mutex> lock(stateMutex);
 	wantedFlag = wanted;
 }
 
-bool dsr_ladder_wanted(void)
+bool dsr_ladder_dual_format(void)
 {
 	const std::lock_guard<std::mutex> lock(stateMutex);
 	return wantedFlag;
+}
+
+/* Either layout needs the output, and the prepare flow picks between them
+ * from the same two answers. */
+bool dsr_ladder_wanted(void)
+{
+	{
+		const std::lock_guard<std::mutex> lock(stateMutex);
+		if (wantedFlag)
+			return true;
+	}
+	return dsr_ladder_plans_wanted();
+}
+
+void dsr_ladder_set_plans_allowed(bool allowed)
+{
+	const std::lock_guard<std::mutex> lock(stateMutex);
+	plansAllowedFlag = allowed;
+}
+
+bool dsr_ladder_plans_allowed(void)
+{
+	const std::lock_guard<std::mutex> lock(stateMutex);
+	return plansAllowedFlag;
+}
+
+bool dsr_ladder_plans_wanted(void)
+{
+	{
+		const std::lock_guard<std::mutex> lock(stateMutex);
+		if (!plansAllowedFlag)
+			return false;
+	}
+	/* Asked outside the lock: nothing here is shared state, and OBS is
+	 * not somewhere to go while holding a lock the output's thread
+	 * wants. */
+	return canvasAbovePlainCeiling();
 }
 
 /* A new session starts with a clean slate: nothing on air yet, nothing to
@@ -79,6 +133,8 @@ uint64_t dsr_ladder_begin_session(void)
 {
 	const std::lock_guard<std::mutex> lock(stateMutex);
 	activeRenditions = 0;
+	activeTallest = 0;
+	activeShortest = 0;
 	sessionNote.clear();
 	return ++sessionCounter;
 }
@@ -126,10 +182,37 @@ void dsr_ladder_report_fallback(const char *reason)
 	dsrLadderSetNote(QString::fromUtf8(obs_module_text("Ladder.Fallback")).arg(why));
 }
 
-void dsr_ladder_report_active(size_t renditions)
+void dsr_ladder_report_active(size_t renditions, const struct dsr_ladder_spec *spec)
 {
 	const std::lock_guard<std::mutex> lock(stateMutex);
 	activeRenditions = renditions;
+	activeTallest = 0;
+	activeShortest = 0;
+	/* Sizes only from the spec these encoders were built from. A count
+	 * that disagrees with it is no basis for naming heights. */
+	if (!spec || spec->count != renditions)
+		return;
+	for (size_t i = 0; i < spec->count; i++) {
+		const uint32_t height = spec->renditions[i].height;
+		if (height == 0)
+			continue;
+		if (height > activeTallest)
+			activeTallest = height;
+		if (activeShortest == 0 || height < activeShortest)
+			activeShortest = height;
+	}
+}
+
+bool dsr_ladder_active_heights(uint32_t *tallest, uint32_t *shortest)
+{
+	const std::lock_guard<std::mutex> lock(stateMutex);
+	if (activeTallest == 0 || activeTallest == activeShortest)
+		return false;
+	if (tallest)
+		*tallest = activeTallest;
+	if (shortest)
+		*shortest = activeShortest;
+	return true;
 }
 
 size_t dsr_ladder_active_renditions(void)

@@ -132,6 +132,7 @@ private:
 	bool mobileNote(QString &text, QString &actionText, std::function<void()> &action);
 	/* Whether the next stream carries a Twitch dual format ladder. */
 	bool ladderWanted() const;
+	bool plansAllowed() const;
 	QString ladderNote() const;
 	QString ladderShortfallNote() const;
 	QString restartNote() const;
@@ -157,7 +158,7 @@ private:
 	void prunePendingToggles();
 	QString elapsedText() const;
 	QString protectedBannerText() const;
-	QString outputMismatch() const;
+	QString outputMismatch(const char *&kind) const;
 	QString summaryText(State state) const;
 	void setPill(State state);
 	void setBanner(const QString &text, const char *kind, const QString &actionText, std::function<void()> action);

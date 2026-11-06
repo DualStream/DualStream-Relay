@@ -316,10 +316,15 @@ QString RelayDock::environmentSignature() const
 	struct dsr_encoder_settings encoder = {};
 	dsr_encoder_read(&encoder);
 
-	const QString value = QStringLiteral("%1|%2|%3|%4/%5|%6|%7")
+	/* The output size belongs here as much as the frame rate does: it
+	 * decides the preflight notes and whether the next stream asks for a
+	 * contribution plan, and OBS raises no event when it changes. */
+	const QString value = QStringLiteral("%1|%2|%3|%4x%5|%6/%7|%8|%9")
 				      .arg(QString::fromUtf8(server ? server : ""))
 				      .arg(QString::fromUtf8(key ? key : ""))
 				      .arg(QString::fromUtf8(account ? account : ""))
+				      .arg(video.output_width)
+				      .arg(video.output_height)
 				      .arg(video.fps_num)
 				      .arg(video.fps_den)
 				      .arg(encoder.video_bitrate_kbps)

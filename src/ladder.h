@@ -57,6 +57,10 @@ struct dsr_ladder_rendition {
 	/* Twitch dictates the codec per rung: H.264, or HEVC where it wants
 	 * one and the machine offered it. */
 	bool hevc;
+	/* The rung must close every GOP. A contribution plan asks for it on a
+	 * rung serving a platform that segments on keyframes; Twitch's own
+	 * ladder never does. */
+	bool closed_gop;
 };
 
 /* One prepared ladder. Rendition order is the contract: index i travels on
@@ -73,7 +77,24 @@ bool dsr_ladder_available(void);
 /* Set by the dock from everything it knows: signed in, an enabled Twitch
  * destination on both canvases, the portrait canvas on. The relay service
  * reads it when OBS asks which output to build for the next stream. */
-void dsr_ladder_set_wanted(bool wanted);
+void dsr_ladder_set_dual_format(bool wanted);
+bool dsr_ladder_dual_format(void);
+
+/* Whether the relay grants this account a contribution plan at all. Pushed
+ * by the dock, which is the only thing that knows the account and the route,
+ * and which hears about a change to either. */
+void dsr_ladder_set_plans_allowed(bool allowed);
+bool dsr_ladder_plans_allowed(void);
+
+/* Whether the next stream should ask for a plan: granted, and the canvas
+ * about to go out is one the relay cannot hand to every platform whole.
+ * The canvas is read here rather than pushed, because nothing in OBS
+ * announces a video settings change and a dock the user has closed is not
+ * watching for one. */
+bool dsr_ladder_plans_wanted(void);
+
+/* Whether the next stream needs the multi-rendition output at all, which is
+ * either layout. Read by the relay service as OBS sets the stream up. */
 bool dsr_ladder_wanted(void);
 
 /* Every press of Start Streaming opens a session; a reconnect does not. The
@@ -135,9 +156,14 @@ void dsr_ladder_output_forget_session(obs_output_t *output);
  * was made for is over. A fallback after the ladder was prepared, when its
  * encoders could not be made, is reported the same way a prepare that
  * fell short is. */
-void dsr_ladder_report_active(size_t renditions);
+void dsr_ladder_report_active(size_t renditions, const struct dsr_ladder_spec *spec);
 void dsr_ladder_report_fallback(const char *reason);
 size_t dsr_ladder_active_renditions(void);
+
+/* The tallest and shortest rendition on air, for a dock that would rather
+ * name the sizes than count them. False where the session carries one size,
+ * or where the spec and the encoders disagreed about how many. */
+bool dsr_ladder_active_heights(uint32_t *tallest, uint32_t *shortest);
 void dsr_ladder_note_prepared(bool prepared);
 bool dsr_ladder_prepared_pending(void);
 

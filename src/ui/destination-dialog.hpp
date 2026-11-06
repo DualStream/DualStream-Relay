@@ -85,7 +85,9 @@ private:
 	QLineEdit *serverEdit = nullptr;
 	QLineEdit *keyEdit = nullptr;
 	QComboBox *canvasCombo = nullptr;
+	QComboBox *heightCombo = nullptr;
 	QLabel *canvasNote = nullptr;
+	QLabel *presetNote = nullptr;
 	QPushButton *customAddButton = nullptr;
 
 	/* The server URL a preset last put in the field, so switching presets

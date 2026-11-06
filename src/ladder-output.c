@@ -81,7 +81,7 @@ static void release_transport(struct dsr_ladder_output *o)
 	dsr_ts_mux_destroy(o->mux);
 	o->mux = NULL;
 	o->active = false;
-	dsr_ladder_report_active(0);
+	dsr_ladder_report_active(0, NULL);
 }
 
 static void end_session(struct dsr_ladder_output *o)
@@ -285,7 +285,7 @@ static void *start_thread(void *data)
 	o->connect_time_ms = (int)((os_gettime_ns() - o->connect_started_ns) / 1000000);
 	o->active = true;
 	obs_output_begin_data_capture(o->output, 0);
-	dsr_ladder_report_active(o->video_count > 1 ? o->video_count : 0);
+	dsr_ladder_report_active(o->video_count > 1 ? o->video_count : 0, &o->spec);
 	obs_log(LOG_INFO, "dual format output started with %zu video rendition(s)", o->video_count);
 	finish_start(o);
 	return NULL;

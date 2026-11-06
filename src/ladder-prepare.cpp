@@ -134,6 +134,9 @@ bool readRendition(const QJsonObject &row, bool havePortrait, bool hevcAvailable
 	out.bitrate_kbps = row.value(QStringLiteral("bitrateKbps")).toInt();
 	out.keyint_sec = row.value(QStringLiteral("keyintSec")).toInt(2);
 	out.hevc = hevc;
+	/* Twitch's ladder is one broadcast's rungs, never segmented by a
+	 * platform that needs the GOP closed. */
+	out.closed_gop = false;
 
 	if (out.canvas_index < 0 || out.canvas_index > 1 || (out.canvas_index == 1 && !havePortrait))
 		return false;
@@ -247,6 +250,23 @@ enum dsr_ladder_outcome dsr_ladder_prepare(struct dsr_ladder_spec *out, const vo
 	}
 	CanvasSpec portrait;
 	const bool havePortrait = portraitCanvas(portrait);
+
+	/* A canvas the relay cannot hand to every platform whole is served by
+	 * a contribution plan instead of Twitch's ladder. The two are separate
+	 * layouts of the same contribution, so a session carries one: Twitch's
+	 * own, where a dual format destination asked for it, and otherwise the
+	 * relay's. */
+	if (!dsr_ladder_dual_format()) {
+		if (!dsr_ladder_plans_wanted())
+			return DSR_LADDER_NONE;
+		/* The plan is the only reason this output exists, so its answer
+		 * is the answer. Asking Twitch for a ladder nobody wanted would
+		 * put this stream into a dual format broadcast instead. */
+		const enum dsr_ladder_outcome planned = dsrLadderAskPlan(out, abort_flag);
+		if (planned == DSR_LADDER_NONE)
+			memset(out, 0, sizeof(*out));
+		return planned;
+	}
 	const bool hevcAvailable = dsrPickHevcEncoderId() != nullptr;
 
 	QJsonArray canvases;
