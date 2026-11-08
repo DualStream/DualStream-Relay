@@ -20,6 +20,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "vertical-audio.hpp"
 
+#include "relay-audio-buses.hpp"
+
 #include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <util/config-file.h>
@@ -62,6 +64,13 @@ DsrVerticalAudioTrack dsrVerticalAudioTrack()
 		if (mode && astrcmpi(mode, "Advanced") == 0) {
 			const uint32_t stream = trackBit(config_get_uint(config, "AdvOut", "TrackIndex"));
 			used |= stream;
+			/* Over SRT the streaming output takes the ticked set
+			 * rather than that single track, and every one of
+			 * them is a contribution audio bus. Taking one for
+			 * the portrait canvas would renumber the buses and
+			 * leave this canvas sharing a mix nobody can switch
+			 * a source out of. */
+			used |= dsrStreamTrackMask();
 			for (int mixer = 0; mixer < MAX_AUDIO_MIXES; mixer++) {
 				if (stream & (1u << mixer))
 					streamMixer = mixer;

@@ -37,6 +37,14 @@ struct DsrDestination {
 	QString platform;
 	QString customPlatform;
 	QString canvas; /* "landscape", "portrait" or "both" */
+	/* The contribution audio bus this destination is served, which is the
+	 * OBS audio track in that position. Zero is the first track, which is
+	 * what every destination gets until one is pointed elsewhere. */
+	int audioBus = 0;
+	/* The bus a Twitch dual format broadcast archives as its VOD track.
+	 * The plugin keeps it on the live bus, so the recording carries what
+	 * the stream carried; a separate VOD mix is the desktop app's. */
+	int vodAudioBus = 1;
 	bool enabled = true;
 	bool hasCustomRtmp = false;
 	QJsonObject metadata;

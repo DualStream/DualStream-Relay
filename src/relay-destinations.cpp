@@ -63,6 +63,8 @@ void RelayDestinations::refresh()
 			dest.platform = row.value(QStringLiteral("platform")).toString();
 			dest.customPlatform = row.value(QStringLiteral("custom_platform")).toString();
 			dest.canvas = row.value(QStringLiteral("canvas")).toString();
+			dest.audioBus = row.value(QStringLiteral("audio_bus")).toInt();
+			dest.vodAudioBus = row.value(QStringLiteral("vod_audio_bus")).toInt(1);
 			dest.enabled = row.value(QStringLiteral("enabled")).toBool();
 			dest.hasCustomRtmp = row.value(QStringLiteral("has_custom_rtmp")).toBool();
 			dest.metadata = row.value(QStringLiteral("metadata")).toObject();

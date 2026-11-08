@@ -42,6 +42,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include "relay-audio-buses.hpp"
 #include "relay-http.hpp"
 
 namespace {
@@ -115,12 +116,17 @@ enum dsr_ladder_outcome dsrLadderAskPlan(struct dsr_ladder_spec *out, const vola
 
 	QJsonArray canvases;
 	canvases.append(canvas);
+	/* The buses this contribution will carry, which is one per audio track
+	 * OBS sends. The relay names buses 0 to 3, so a fifth or sixth track
+	 * travels without being nameable here. */
 	QJsonArray buses;
-	buses.append(0);
+	for (const DsrAudioBus &bus : dsrSelectableAudioBuses())
+		buses.append(bus.bus);
+	if (buses.isEmpty())
+		buses.append(0);
 
 	QJsonObject body;
 	body.insert(QStringLiteral("canvases"), canvases);
-	/* One bus: the plugin sends OBS's program audio and nothing beside it. */
 	body.insert(QStringLiteral("audioBuses"), buses);
 	/* The encoder session budget is the desktop app's measurement; without
 	 * one the website plans against no limit, and a rung this machine

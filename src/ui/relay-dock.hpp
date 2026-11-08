@@ -133,6 +133,7 @@ private:
 	/* Whether the next stream carries a Twitch dual format ladder. */
 	bool ladderWanted() const;
 	bool plansAllowed() const;
+	void discardStalePlan();
 	QString ladderNote() const;
 	QString ladderShortfallNote() const;
 	QString restartNote() const;

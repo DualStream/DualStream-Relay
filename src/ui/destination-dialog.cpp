@@ -39,6 +39,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-frontend-api.h>
 
 #include "../ladder.h"
+#include "../relay-audio-buses.hpp"
 #include "../relay-output.h"
 #include "../relay-secrets.hpp"
 #include "dsr-ui-common.hpp"
@@ -92,6 +93,60 @@ void DestinationDialog::fillCanvasCombo(QComboBox *combo, const QString &platfor
 	}
 }
 
+/* Which of OBS's audio tracks this destination is served. The relay numbers
+ * the tracks OBS sends from zero in the order it sends them, so the choice is
+ * named by the track it is in OBS rather than by that number, which means
+ * nothing in either place a creator looks. */
+void DestinationDialog::fillAudioCombo(QComboBox *combo, int selected)
+{
+	combo->clear();
+	for (const DsrAudioBus &bus : dsrSelectableAudioBuses())
+		combo->addItem(QString(dsrText("Destinations.AudioTrackItem")).arg(bus.obsTrack), bus.bus);
+
+	/* A track that was ticked when this destination was pointed at it and
+	 * is not ticked now. Saying so beats showing the first track as
+	 * though that were the choice on file, and leaves the choice on file
+	 * alone until it is changed here. */
+	int index = combo->findData(selected);
+	if (index < 0) {
+		combo->addItem(QString(dsrText("Destinations.AudioTrackGone")).arg(selected + 1), selected);
+		index = combo->count() - 1;
+	}
+	combo->setCurrentIndex(index);
+}
+
+/* What the audio row can do for the canvas now selected. The mobile stream
+ * is its own contribution carrying its own mix, so a destination that
+ * receives only that one has no track to choose; the rest follow how many
+ * tracks OBS is sending. */
+void DestinationDialog::updateAudioRow()
+{
+	if (!audioCombo || !audioNote)
+		return;
+	const bool portraitOnly = canvasCombo && canvasCombo->currentData().toString() == QLatin1String("portrait");
+	const bool several = dsrSelectableAudioBuses().size() > 1;
+	const bool both = canvasCombo && canvasCombo->currentData().toString() == QLatin1String("both");
+
+	audioCombo->setEnabled(!portraitOnly && audioCombo->count() > 1);
+	/* Twitch keeps a VOD track only in a dual format broadcast, which is
+	 * what the both-canvas choice asks for. */
+	if (vodCombo)
+		vodCombo->setEnabled(both);
+
+	QStringList said;
+	if (portraitOnly)
+		said.append(dsrText("Destinations.AudioTrackPortrait"));
+	else if (several)
+		said.append(dsrText(both ? "Destinations.AudioTrackBoth" : "Destinations.AudioTrackNote"));
+	else if (dsrAudioTracksAvailable())
+		said.append(dsrText("Destinations.AudioTrackOne"));
+	else
+		said.append(dsrText("Destinations.AudioTrackSimple"));
+	if (vodCombo && both)
+		said.append(dsrText("Destinations.VodTrackNote"));
+	audioNote->setText(said.join(QStringLiteral(" ")));
+}
+
 DestinationDialog::DestinationDialog(RelayAuth *auth, RelayDestinations *destinations, QWidget *parent)
 	: QDialog(parent),
 	  auth(auth),
@@ -129,6 +184,29 @@ void DestinationDialog::buildEditUi()
 	fillCanvasCombo(canvasCombo, existing.platform, existing.canvas, canvasNote);
 	form->addRow(dsrText("Destinations.Canvas"), canvasCombo);
 
+	audioCombo = new QComboBox;
+	audioNote = new QLabel;
+	audioNote->setObjectName(QStringLiteral("mutedText"));
+	audioNote->setWordWrap(true);
+	fillAudioCombo(audioCombo, existing.audioBus);
+	form->addRow(dsrText("Destinations.AudioTrack"), audioCombo);
+
+	/* Twitch archives a second audio track with a dual format broadcast,
+	 * and which track that is only means something once more than one is
+	 * being sent. Offered here rather than assumed, because the same
+	 * destination may be driven by the desktop app, where this is a mix
+	 * the creator built for it. */
+	if (existing.platform == QLatin1String("twitch") && dsrSelectableAudioBuses().size() > 1) {
+		vodCombo = new QComboBox;
+		fillAudioCombo(vodCombo, existing.vodAudioBus);
+		form->addRow(dsrText("Destinations.VodTrack"), vodCombo);
+	}
+
+	/* The canvas decides what the audio row can offer, so it follows the
+	 * canvas rather than being read once. */
+	connect(canvasCombo, &QComboBox::currentIndexChanged, this, &DestinationDialog::updateAudioRow);
+	updateAudioRow();
+
 	if (existing.type == QLatin1String("custom")) {
 		/* The API never returns a stored server or key, so the only
 		 * values that can be shown are the copies kept on this machine.
@@ -158,6 +236,7 @@ void DestinationDialog::buildEditUi()
 
 	layout->addLayout(form);
 	layout->addWidget(canvasNote);
+	layout->addWidget(audioNote);
 
 	if (existing.platform == QLatin1String("youtube")) {
 		layout->addWidget(dsrMakeSeparator());
@@ -210,6 +289,18 @@ void DestinationDialog::submitEdit()
 	const QString canvas = canvasCombo->currentData().toString();
 	if (canvas != existing.canvas)
 		body.insert(QStringLiteral("canvas"), canvas);
+	const int audioBus = audioCombo->currentData().toInt();
+	if (audioBus != existing.audioBus)
+		body.insert(QStringLiteral("audio_bus"), audioBus);
+	/* Only ever what the VOD row says, and only where that row exists.
+	 * The same destination can be driven by the desktop app, where this
+	 * bus is a mix a creator chose deliberately, so a value nobody
+	 * touched here is left exactly as it was found. */
+	if (vodCombo) {
+		const int vodBus = vodCombo->currentData().toInt();
+		if (vodBus != existing.vodAudioBus)
+			body.insert(QStringLiteral("vod_audio_bus"), vodBus);
+	}
 
 	DsrRtmpTarget target;
 	if (serverEdit && keyEdit) {

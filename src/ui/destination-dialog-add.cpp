@@ -157,8 +157,21 @@ void DestinationDialog::buildAddUi()
 	canvasNote->setVisible(false);
 	fillCanvasCombo(canvasCombo, QString(), QStringLiteral("landscape"), canvasNote);
 	form->addRow(dsrText("Destinations.Canvas"), canvasCombo);
+
+	/* Which audio it is served, from the first track up. A destination
+	 * added here starts on the first track, as every destination does. */
+	audioCombo = new QComboBox;
+	audioNote = new QLabel;
+	audioNote->setObjectName(QStringLiteral("mutedText"));
+	audioNote->setWordWrap(true);
+	fillAudioCombo(audioCombo, 0);
+	form->addRow(dsrText("Destinations.AudioTrack"), audioCombo);
+	connect(canvasCombo, &QComboBox::currentIndexChanged, this, &DestinationDialog::updateAudioRow);
+	updateAudioRow();
+
 	layout->addLayout(form);
 	layout->addWidget(canvasNote);
+	layout->addWidget(audioNote);
 
 	connect(presetCombo, &QComboBox::currentIndexChanged, this, &DestinationDialog::applyPreset);
 
@@ -366,6 +379,7 @@ void DestinationDialog::submitCustom()
 	body.insert(QStringLiteral("rtmp_key"), keyEdit->text());
 	body.insert(QStringLiteral("canvas"), canvasCombo->currentData().toString());
 	body.insert(QStringLiteral("video_max_height"), heightCombo->currentData().toInt());
+	body.insert(QStringLiteral("audio_bus"), audioCombo->currentData().toInt());
 	if (!labelEdit->text().trimmed().isEmpty())
 		body.insert(QStringLiteral("label"), labelEdit->text().trimmed());
 	body.insert(QStringLiteral("terms_ack"), true);

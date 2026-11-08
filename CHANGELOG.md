@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.3.6
+
+### Audio
+
+- Each destination can now be served its own audio. OBS already sends every
+  audio track you tick under Settings, Output, Streaming, and a destination
+  now says which of those tracks it receives, so a soundboard left off
+  track 2 can reach Twitch and not YouTube. Choose it when you add a
+  destination with a stream key, or on any destination under Edit. A source
+  is put on a track in the Audio Mixer, under Advanced Audio Properties.
+- A Twitch dual format broadcast also archives a VOD track, and you can now
+  say which of your tracks it keeps. Left on the same track as the stream,
+  it archives what went out, which is what it always did.
+- Your mobile stream keeps its own mix, the one the DualStream Mobile
+  Sources dock switches sources out of, and it no longer takes a track your
+  desktop stream is sending. Before, it only knew about the single track
+  OBS uses for other servers, so it could land on one of yours.
+
+### Fixed
+
+- Going live without multi-size output no longer runs into the
+  arrangement left over from a stream that had it. The relay keeps the
+  last arrangement asked for, so a stream that was not sending those
+  sizes still had every destination bound to one that never arrived, and
+  the relay took the program down once the contribution proved it. Going
+  live now clears that arrangement first, and only ever the one this
+  plugin stored: a stream running from the DualStream desktop app is
+  left alone.
+
 ## 0.3.5
 
 ### Destinations

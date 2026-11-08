@@ -229,7 +229,6 @@ struct dsr_ts_mux *dsr_ts_mux_create(dsr_ts_sink_fn sink, void *ctx)
 	struct dsr_ts_mux *mux = bzalloc(sizeof(*mux));
 	mux->sink = sink;
 	mux->ctx = ctx;
-	mux->audio.pid = DSR_TS_PID_AUDIO;
 	return mux;
 }
 
@@ -280,25 +279,32 @@ static uint8_t rate_index_for(uint32_t sample_rate)
 	return 3;
 }
 
-bool dsr_ts_mux_set_audio(struct dsr_ts_mux *mux, const uint8_t *config, size_t size, uint32_t sample_rate,
+bool dsr_ts_mux_add_audio(struct dsr_ts_mux *mux, const uint8_t *config, size_t size, uint32_t sample_rate,
 			  size_t channels)
 {
+	if (mux->audio_count >= DSR_TS_MAX_AUDIO)
+		return false;
+
+	const size_t index = mux->audio_count;
+	struct dsr_ts_audio *bus = &mux->audio[index];
+	bus->stream.pid = DSR_TS_PID_AUDIO_BASE + (uint16_t)index;
+	bus->stream.continuity = 0;
 	/* The ADTS header has three bits for the channel layout; a
 	 * configuration beyond them cannot be described in it and falls back
 	 * to what the mix reports. */
 	if (config && size >= 2 && ((config[1] >> 3) & 0x0F) <= 7) {
-		mux->adts_profile = (uint8_t)(config[0] >> 3);
-		mux->adts_rate_index = (uint8_t)(((config[0] & 0x07) << 1) | (config[1] >> 7));
-		mux->adts_channels = (uint8_t)((config[1] >> 3) & 0x07);
+		bus->adts_profile = (uint8_t)(config[0] >> 3);
+		bus->adts_rate_index = (uint8_t)(((config[0] & 0x07) << 1) | (config[1] >> 7));
+		bus->adts_channels = (uint8_t)((config[1] >> 3) & 0x07);
 	} else {
 		/* AAC-LC, which is what every OBS audio encoder produces. */
-		mux->adts_profile = 2;
-		mux->adts_rate_index = rate_index_for(sample_rate);
-		mux->adts_channels = (uint8_t)(channels > 7 ? 7 : channels);
+		bus->adts_profile = 2;
+		bus->adts_rate_index = rate_index_for(sample_rate);
+		bus->adts_channels = (uint8_t)(channels > 7 ? 7 : channels);
 	}
-	if (mux->adts_profile == 0 || mux->adts_profile > 4)
-		mux->adts_profile = 2;
-	mux->have_audio = true;
+	if (bus->adts_profile == 0 || bus->adts_profile > 4)
+		bus->adts_profile = 2;
+	mux->audio_count++;
 	return true;
 }
 
@@ -358,12 +364,14 @@ bool dsr_ts_mux_write_video(struct dsr_ts_mux *mux, size_t index, const uint8_t 
 	return write_pes(mux, &mux->video[index], pes, at, primary, dts - PCR_LEAD_90K);
 }
 
-bool dsr_ts_mux_write_audio(struct dsr_ts_mux *mux, const uint8_t *data, size_t size, int64_t pts)
+bool dsr_ts_mux_write_audio(struct dsr_ts_mux *mux, size_t index, const uint8_t *data, size_t size, int64_t pts)
 {
-	if (mux->failed || !mux->have_audio || size == 0)
+	if (mux->failed || index >= mux->audio_count || size == 0)
 		return false;
 	if (!maybe_write_tables(mux, pts, false))
 		return false;
+
+	struct dsr_ts_audio *bus = &mux->audio[index];
 
 	/* Raw AAC frames become ADTS frames: a seven byte header carrying the
 	 * profile, rate and channel layout the decoder cannot recover from the
@@ -377,8 +385,8 @@ bool dsr_ts_mux_write_audio(struct dsr_ts_mux *mux, const uint8_t *data, size_t 
 	uint8_t *adts = pes + at;
 	adts[0] = 0xFF;
 	adts[1] = 0xF1;
-	adts[2] = (uint8_t)(((mux->adts_profile - 1) << 6) | (mux->adts_rate_index << 2) | (mux->adts_channels >> 2));
-	adts[3] = (uint8_t)(((mux->adts_channels & 0x03) << 6) | (frame_len >> 11));
+	adts[2] = (uint8_t)(((bus->adts_profile - 1) << 6) | (bus->adts_rate_index << 2) | (bus->adts_channels >> 2));
+	adts[3] = (uint8_t)(((bus->adts_channels & 0x03) << 6) | (frame_len >> 11));
 	adts[4] = (uint8_t)(frame_len >> 3);
 	adts[5] = (uint8_t)(((frame_len & 0x07) << 5) | 0x1F);
 	adts[6] = 0xFC;
@@ -386,7 +394,7 @@ bool dsr_ts_mux_write_audio(struct dsr_ts_mux *mux, const uint8_t *data, size_t 
 	memcpy(pes + at, data, size);
 	at += size;
 
-	return write_pes(mux, &mux->audio, pes, at, false, 0);
+	return write_pes(mux, &bus->stream, pes, at, false, 0);
 }
 
 bool dsr_ts_mux_flush(struct dsr_ts_mux *mux)

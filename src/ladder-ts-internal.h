@@ -28,11 +28,21 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #define DSR_TS_PID_PMT 0x1000
 #define DSR_TS_PID_NULL 0x1FFF
 #define DSR_TS_PID_VIDEO_BASE 0x0200
-#define DSR_TS_PID_AUDIO 0x0101
+#define DSR_TS_PID_AUDIO_BASE 0x0101
 
 struct dsr_ts_stream {
 	uint16_t pid;
 	uint8_t continuity;
+};
+
+/* One audio bus. The ADTS fields are per bus because each carries its own
+ * encoder, and nothing stops a creator giving one of them a different sample
+ * rate or channel layout. */
+struct dsr_ts_audio {
+	struct dsr_ts_stream stream;
+	uint8_t adts_profile;
+	uint8_t adts_rate_index;
+	uint8_t adts_channels;
 };
 
 struct dsr_ts_mux {
@@ -46,11 +56,8 @@ struct dsr_ts_mux {
 	bool video_header_missing_noted[DSR_TS_MAX_VIDEO];
 	size_t video_count;
 
-	struct dsr_ts_stream audio;
-	bool have_audio;
-	uint8_t adts_profile;
-	uint8_t adts_rate_index;
-	uint8_t adts_channels;
+	struct dsr_ts_audio audio[DSR_TS_MAX_AUDIO];
+	size_t audio_count;
 
 	uint8_t pat_continuity;
 	uint8_t pmt_continuity;

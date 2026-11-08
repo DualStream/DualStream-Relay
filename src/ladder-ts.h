@@ -29,10 +29,10 @@ extern "C" {
 #endif
 
 /* MPEG-TS writer for the relay contribution: up to ten video streams, each
- * H.264 or HEVC in byte-stream form, and one AAC stream in one program,
- * packed seven packets at a time into the messages an SRT live link
- * carries. Video i is pinned to PID 0x200 + i and
- * the audio to 0x101, which is the order the relay binds renditions by.
+ * H.264 or HEVC in byte-stream form, and up to six AAC streams in one
+ * program, packed seven packets at a time into the messages an SRT live link
+ * carries. Video i is pinned to PID 0x200 + i and audio bus b to 0x101 + b,
+ * which is the order the relay binds renditions and buses by.
  *
  * Every timestamp handed in is in 90 kHz ticks and already offset so the
  * first decode time sits well above zero; the writer schedules its clock
@@ -42,6 +42,9 @@ extern "C" {
 #define DSR_TS_CHUNK_PACKETS 7
 #define DSR_TS_CHUNK_SIZE (DSR_TS_PACKET_SIZE * DSR_TS_CHUNK_PACKETS)
 #define DSR_TS_MAX_VIDEO 10
+/* As many audio buses as OBS has encoder slots on one output
+ * (MAX_OUTPUT_AUDIO_ENCODERS), which is as many as it can hand over. */
+#define DSR_TS_MAX_AUDIO 6
 
 /* Receives every filled chunk. A false return ends the stream. */
 typedef bool (*dsr_ts_sink_fn)(void *ctx, const uint8_t *chunk, size_t len);
@@ -51,18 +54,19 @@ struct dsr_ts_mux;
 struct dsr_ts_mux *dsr_ts_mux_create(dsr_ts_sink_fn sink, void *ctx);
 void dsr_ts_mux_destroy(struct dsr_ts_mux *mux);
 
-/* Declare the streams, in ladder order, before the first packet. The video
- * parameter sets are the encoder's own Annex-B header, repeated ahead of any
- * keyframe that does not carry its own. The audio configuration is the two
- * byte AudioSpecificConfig; when the encoder gives none, the sample rate and
- * channel count stand in for it. */
+/* Declare the streams, in ladder order and bus order, before the first
+ * packet. The video parameter sets are the encoder's own Annex-B header,
+ * repeated ahead of any keyframe that does not carry its own. The audio
+ * configuration is the two byte AudioSpecificConfig; when the encoder gives
+ * none, the sample rate and channel count stand in for it. Each call adds
+ * the next stream, so the order of the calls is the order on the wire. */
 bool dsr_ts_mux_add_video(struct dsr_ts_mux *mux, const uint8_t *parameter_sets, size_t size, bool hevc);
-bool dsr_ts_mux_set_audio(struct dsr_ts_mux *mux, const uint8_t *config, size_t size, uint32_t sample_rate,
+bool dsr_ts_mux_add_audio(struct dsr_ts_mux *mux, const uint8_t *config, size_t size, uint32_t sample_rate,
 			  size_t channels);
 
 bool dsr_ts_mux_write_video(struct dsr_ts_mux *mux, size_t index, const uint8_t *data, size_t size, int64_t pts,
 			    int64_t dts, bool keyframe);
-bool dsr_ts_mux_write_audio(struct dsr_ts_mux *mux, const uint8_t *data, size_t size, int64_t pts);
+bool dsr_ts_mux_write_audio(struct dsr_ts_mux *mux, size_t index, const uint8_t *data, size_t size, int64_t pts);
 
 /* Send whatever is waiting in a partial chunk, padded with null packets. */
 bool dsr_ts_mux_flush(struct dsr_ts_mux *mux);

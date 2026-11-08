@@ -37,6 +37,24 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "dsr-ui-common.hpp"
 #include "relay-dock-text.hpp"
 
+/* A contribution plan the website still holds from an earlier go-live is the
+ * layout the relay builds the next session around, whoever asked for it. This
+ * stream is not sending one, so the plan has to go before it starts, or the
+ * relay binds every destination to renditions that are not there and has to
+ * take the program down again once the contribution proves it.
+ *
+ * Only ever this plugin's own plan: the request names the client, and the
+ * website takes down nothing else, so a plan the desktop app is live on is
+ * untouched. Asked only where the account could have stored one at all. */
+void RelayDock::discardStalePlan()
+{
+	if (!auth->signedIn() || !dsr_route_is_relay())
+		return;
+	if (!dsr_ladder_plans_allowed() || dsr_ladder_plans_wanted())
+		return;
+	auth->del(QStringLiteral("/api/relay/program/prepare"), [](const DsrApiResult &) {});
+}
+
 void RelayDock::handleFrontendEvent(enum obs_frontend_event event)
 {
 	switch (event) {
@@ -52,6 +70,7 @@ void RelayDock::handleFrontendEvent(enum obs_frontend_event event)
 	case OBS_FRONTEND_EVENT_STREAMING_STARTING:
 		auth->ensureFreshToken();
 		pushLadderAuth();
+		discardStalePlan();
 		dsr_ladder_begin_session();
 		dsr_stream_watch_clear();
 		dsr_stream_watch_arm();

@@ -81,6 +81,7 @@ target_sources(
     src/ladder-plan.cpp
     src/ladder-prepare.cpp
     src/vertical-audio.cpp
+    src/relay-audio-buses.cpp
     src/relay-auth.cpp
     src/relay-destinations.cpp
     src/relay-direct.cpp

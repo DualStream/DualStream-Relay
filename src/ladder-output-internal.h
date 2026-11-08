@@ -77,6 +77,7 @@ struct dsr_ladder_output {
 	bool spec_valid;
 	uint64_t session;
 	size_t video_count;
+	size_t audio_count;
 
 	bool base_set;
 	int64_t offset_90k;

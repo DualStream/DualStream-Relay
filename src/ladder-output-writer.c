@@ -76,7 +76,7 @@ static bool mux_packet(struct dsr_ladder_output *o, const struct dsr_queued_pack
 	if (packet->video)
 		return dsr_ts_mux_write_video(o->mux, packet->track, packet->data, packet->size, pts, dts,
 					      packet->keyframe);
-	return dsr_ts_mux_write_audio(o->mux, packet->data, packet->size, pts);
+	return dsr_ts_mux_write_audio(o->mux, packet->track, packet->data, packet->size, pts);
 }
 
 void *dsr_ladder_write_thread(void *data)

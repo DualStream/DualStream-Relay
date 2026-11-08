@@ -19,8 +19,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 /* The program tables of the contribution: one program, its map naming every
- * video PID in ladder order and the audio PID, and the clock reference on
- * the primary video. */
+ * video PID in ladder order and every audio PID in bus order, and the clock
+ * reference on the primary video. */
 
 #include "ladder-ts-internal.h"
 
@@ -90,9 +90,9 @@ bool dsr_ts_write_tables(struct dsr_ts_mux *mux)
 
 	/* The clock rides with the primary video. */
 	const uint16_t pcr_pid = mux->video_count ? mux->video[0].pid : DSR_TS_PID_NULL;
-	const size_t streams = mux->video_count + (mux->have_audio ? 1 : 0);
+	const size_t streams = mux->video_count + mux->audio_count;
 	const size_t length = 9 + 5 * streams + 4;
-	uint8_t pmt[3 + 9 + 5 * (DSR_TS_MAX_VIDEO + 1) + 4];
+	uint8_t pmt[3 + 9 + 5 * (DSR_TS_MAX_VIDEO + DSR_TS_MAX_AUDIO) + 4];
 	pmt[0] = 0x02;
 	pmt[1] = 0xB0 | (uint8_t)(length >> 8);
 	pmt[2] = (uint8_t)length;
@@ -113,10 +113,10 @@ bool dsr_ts_write_tables(struct dsr_ts_mux *mux)
 		pmt[at++] = 0xF0;
 		pmt[at++] = 0x00;
 	}
-	if (mux->have_audio) {
+	for (size_t i = 0; i < mux->audio_count; i++) {
 		pmt[at++] = STREAM_TYPE_AAC;
-		pmt[at++] = 0xE0 | (uint8_t)(mux->audio.pid >> 8);
-		pmt[at++] = (uint8_t)mux->audio.pid;
+		pmt[at++] = 0xE0 | (uint8_t)(mux->audio[i].stream.pid >> 8);
+		pmt[at++] = (uint8_t)mux->audio[i].stream.pid;
 		pmt[at++] = 0xF0;
 		pmt[at++] = 0x00;
 	}

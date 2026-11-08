@@ -240,14 +240,25 @@ static bool build_mux(struct dsr_ladder_output *o, char *error, size_t error_len
 		return false;
 	}
 
-	obs_encoder_t *audio = obs_output_get_audio_encoder(o->output, 0);
-	if (audio) {
+	/* Every audio encoder OBS attached, in its own order: encoder i is
+	 * bus i, which is the bus a destination asks for by number. A gap
+	 * would renumber every bus after it, so the first empty slot ends the
+	 * contribution's audio. */
+	o->audio_count = 0;
+	for (size_t i = 0; i < MAX_OUTPUT_AUDIO_ENCODERS; i++) {
+		obs_encoder_t *audio = obs_output_get_audio_encoder(o->output, i);
+		if (!audio)
+			break;
 		uint8_t *config = NULL;
 		size_t config_size = 0;
 		obs_encoder_get_extra_data(audio, &config, &config_size);
 		audio_t *mix = obs_encoder_audio(audio);
-		dsr_ts_mux_set_audio(o->mux, config, config_size, obs_encoder_get_sample_rate(audio),
-				     mix ? audio_output_get_channels(mix) : 2);
+		if (!dsr_ts_mux_add_audio(o->mux, config, config_size, obs_encoder_get_sample_rate(audio),
+					  mix ? audio_output_get_channels(mix) : 2)) {
+			strncpy(error, "too many audio buses", error_len - 1);
+			return false;
+		}
+		o->audio_count++;
 	}
 	return true;
 }
@@ -286,7 +297,8 @@ static void *start_thread(void *data)
 	o->active = true;
 	obs_output_begin_data_capture(o->output, 0);
 	dsr_ladder_report_active(o->video_count > 1 ? o->video_count : 0, &o->spec);
-	obs_log(LOG_INFO, "dual format output started with %zu video rendition(s)", o->video_count);
+	obs_log(LOG_INFO, "dual format output started with %zu video rendition(s) and %zu audio bus(es)",
+		o->video_count, o->audio_count);
 	finish_start(o);
 	return NULL;
 }
@@ -417,7 +429,7 @@ static int ladder_connect_time(void *data)
 
 static struct obs_output_info ladder_output_info = {
 	.id = DSR_LADDER_OUTPUT_ID,
-	.flags = OBS_OUTPUT_AV | OBS_OUTPUT_ENCODED | OBS_OUTPUT_MULTI_TRACK_VIDEO | OBS_OUTPUT_SERVICE,
+	.flags = OBS_OUTPUT_AV | OBS_OUTPUT_ENCODED | OBS_OUTPUT_MULTI_TRACK_AV | OBS_OUTPUT_SERVICE,
 	.get_name = ladder_get_name,
 	.create = ladder_create,
 	.destroy = ladder_destroy,

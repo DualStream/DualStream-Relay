@@ -64,6 +64,8 @@ private:
 
 	static QStringList allowedCanvases(const QString &platform);
 	static void fillCanvasCombo(QComboBox *combo, const QString &platform, const QString &selected, QLabel *note);
+	static void fillAudioCombo(QComboBox *combo, int selected);
+	void updateAudioRow();
 
 	RelayAuth *auth;
 	RelayDestinations *destinations;
@@ -86,7 +88,10 @@ private:
 	QLineEdit *keyEdit = nullptr;
 	QComboBox *canvasCombo = nullptr;
 	QComboBox *heightCombo = nullptr;
+	QComboBox *audioCombo = nullptr;
+	QComboBox *vodCombo = nullptr;
 	QLabel *canvasNote = nullptr;
+	QLabel *audioNote = nullptr;
 	QLabel *presetNote = nullptr;
 	QPushButton *customAddButton = nullptr;
 
